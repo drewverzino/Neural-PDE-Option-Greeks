@@ -1,6 +1,11 @@
-"""Synthetic data generation for training and validation splits."""
+"""Synthetic data generation for training, validation, and test splits."""
 
+from __future__ import annotations
+
+import argparse
 from pathlib import Path
+
+import matplotlib.pyplot as plt
 import numpy as np
 
 from . import DATA_DIR
@@ -10,43 +15,135 @@ from .utils import bs_price
 def generate_dataset(
     n_train: int = 1_000_000,
     n_val: int = 100_000,
-    K: float = 100,
+    n_test: int = 100_000,
+    *,
+    K: float = 100.0,
+    T: float = 2.0,
     r: float = 0.05,
     seed: int = 42,
     output_dir: Path = DATA_DIR,
-):
+    t_min: float = 0.01,
+    t_max: float | None = None,
+    s_bounds: tuple[float, float] = (20.0, 200.0),
+    sigma_bounds: tuple[float, float] = (0.05, 0.6),
+) -> dict[str, np.ndarray]:
     """Draw samples across Black-Scholes inputs and store priced datasets.
 
     Parameters
     ----------
-    n_train, n_val : int
-        Number of Monte-Carlo samples for the training and validation splits.
-    K : float
-        Strike price used for all synthetic contracts.
-    r : float
-        Risk-free rate for discounting.
+    n_train, n_val, n_test : int
+        Number of Monte-Carlo samples for the training/validation/test splits.
+    K, T, r : float
+        Contract strike, maturity, and risk-free rate used for pricing.
     seed : int
         Random seed for reproducibility.
     output_dir : pathlib.Path
         Destination directory for the generated NumPy files.
+    t_min, t_max : float
+        Minimum and maximum calendar time. If `t_max` is None we use
+        `T - 1e-3` to avoid zero time-to-maturity.
+    s_bounds, sigma_bounds : tuple
+        (min, max) ranges for the underlying price and volatility draws.
     """
-    np.random.seed(seed)
+    rng = np.random.default_rng(seed)
+    t_upper = T - 1e-3 if t_max is None else min(t_max, T - 1e-6)
 
-    def sample(n):
+    def sample(n: int) -> np.ndarray:
         """Return an array with columns [S, t, sigma, price] for n draws."""
-        S = np.random.uniform(20, 200, n)
-        t = np.random.uniform(0.01, 2.0, n)
-        sigma = np.random.uniform(0.05, 0.6, n)
-        V = bs_price(S, K, T=2.0, t=t, sigma=sigma, r=r)
+        S = rng.uniform(s_bounds[0], s_bounds[1], n)
+        t = rng.uniform(t_min, t_upper, n)
+        sigma = rng.uniform(sigma_bounds[0], sigma_bounds[1], n)
+        V = bs_price(S, K, T=T, t=t, sigma=sigma, r=r)
         return np.stack([S, t, sigma, V], axis=1)
 
-    train, val = sample(n_train), sample(n_val)
+    splits = {
+        "train": sample(n_train),
+        "val": sample(n_val),
+        "test": sample(n_test),
+    }
+
     output_dir.mkdir(parents=True, exist_ok=True)
-    np.save(output_dir / "synthetic_train.npy", train)
-    np.save(output_dir / "synthetic_val.npy", val)
+    for name, array in splits.items():
+        np.save(output_dir / f"synthetic_{name}.npy", array)
     print(
-        f"Generated {len(train)} training and {len(val)} validation samples.")
+        "Generated datasets:",
+        ", ".join(f"{name}={len(arr)}" for name, arr in splits.items()),
+    )
+    return splits
+
+
+def _visualize_splits(splits: dict[str, np.ndarray], output_dir: Path) -> None:
+    """Create simple sanity plots for the generated datasets."""
+    output_dir = Path(output_dir)
+    figures_dir = output_dir / "figures"
+    figures_dir.mkdir(parents=True, exist_ok=True)
+
+    for name, data in splits.items():
+        S, t, sigma, V = data.T
+        fig, axes = plt.subplots(2, 2, figsize=(8, 6))
+        axes = axes.flatten()
+
+        axes[0].hist(S, bins=50, color="tab:blue", alpha=0.75)
+        axes[0].set_title(f"{name} · Stock price S")
+        axes[0].set_xlabel("S")
+
+        axes[1].hist(t, bins=50, color="tab:green", alpha=0.75)
+        axes[1].set_title(f"{name} · Calendar time t")
+        axes[1].set_xlabel("t")
+
+        axes[2].hist(sigma, bins=50, color="tab:orange", alpha=0.75)
+        axes[2].set_title(f"{name} · Volatility σ")
+        axes[2].set_xlabel("σ")
+
+        axes[3].scatter(S, V, s=2, alpha=0.3)
+        axes[3].set_title(f"{name} · Price vs S")
+        axes[3].set_xlabel("S")
+        axes[3].set_ylabel("Price")
+
+        fig.tight_layout()
+        fig.savefig(figures_dir / f"{name}_histograms.png", dpi=200)
+        plt.close(fig)
+
+
+def _build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="Generate synthetic Black-Scholes datasets.")
+    parser.add_argument("--n-train", type=int, default=1_000_000, help="Number of training samples.")
+    parser.add_argument("--n-val", type=int, default=100_000, help="Number of validation samples.")
+    parser.add_argument("--n-test", type=int, default=100_000, help="Number of test samples.")
+    parser.add_argument("--strike", type=float, default=100.0, help="Strike price K.")
+    parser.add_argument("--maturity", type=float, default=2.0, help="Maturity T (years).")
+    parser.add_argument("--rate", type=float, default=0.05, help="Risk-free rate r.")
+    parser.add_argument("--seed", type=int, default=42, help="Random seed.")
+    parser.add_argument(
+        "--output-dir",
+        type=Path,
+        default=DATA_DIR,
+        help="Directory to store .npy files.",
+    )
+    parser.add_argument(
+        "--visualize",
+        action="store_true",
+        help="Produce exploratory plots of the generated datasets.",
+    )
+    return parser
+
+
+def main() -> None:
+    parser = _build_parser()
+    args = parser.parse_args()
+    splits = generate_dataset(
+        n_train=args.n_train,
+        n_val=args.n_val,
+        n_test=args.n_test,
+        K=args.strike,
+        T=args.maturity,
+        r=args.rate,
+        seed=args.seed,
+        output_dir=args.output_dir,
+    )
+    if args.visualize:
+        _visualize_splits(splits, args.output_dir)
 
 
 if __name__ == "__main__":
-    generate_dataset()
+    main()

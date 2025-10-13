@@ -1,222 +1,252 @@
-# CS 4644/7643: Greeks Estimation via Physics-Informed Neural Networks
+# CS 4644/7643 · Neural PDE Option Greeks
 
-## 📘 Overview
-
-This repository contains the implementation for our **Deep Learning course project** at Georgia Tech — *Greeks Estimation via Physics-Informed Neural Networks (PINNs)*. The project explores how **deep neural networks** can be trained to **satisfy the Black–Scholes partial differential equation (PDE)** directly through the loss function, enabling accurate, efficient, and smooth computation of **option Greeks** (Δ, Γ, Θ, ν, ρ).
-
-Traditional methods such as finite-difference and Monte Carlo simulations either produce noisy estimates or are computationally expensive, especially for higher-order Greeks. PINNs provide a powerful alternative by enforcing known physical (in this case, financial) laws during training.
+Physics-Informed Neural Networks (PINNs) allow us to embed financial theory directly into a neural network’s training objective. This repository contains the full research stack for our Georgia Tech Deep Learning project on **efficiently estimating option Greeks by solving the Black–Scholes PDE with a neural surrogate**. It includes data generation, model code, adaptive sampling utilities, notebooks for diagnostics, and project documentation.
 
 ---
 
-## 🎯 Project Objectives
+## 1. Motivation and Research Goals
 
-1. **Model Goal:** Develop a PINN that predicts option prices and Greeks simultaneously without retraining across volatility regimes.
-2. **Key Innovation:** Include volatility (σ) as an explicit network input to generalize across different volatility surfaces.
-3. **Evaluation:** Compare against classical baselines (Finite Difference, Monte Carlo, fixed-σ PINN) using metrics such as RMSE, total variation smoothness, and training stability.
-4. **Application:** Improve the interpretability, efficiency, and numerical stability of deep learning models in quantitative finance.
-
----
-
-## 📅 Deliverable Timeline
-
-| Deliverable | Due Date | Description | Weight |
-|:--|:--|:--|:--:|
-| **Project Proposal** | Oct 1, 2025 | Define problem, related work, and plan | 1% |
-| **Milestone Report** | Nov 3, 2025 | 4-page CVPR-style progress report | 10% |
-| **Final Report** | Nov 30, 2025 | 6–8 page CVPR-style full paper | 20% |
-| **Poster Session** | Dec 1, 2025 | In-person presentation (Klaus Atrium) | 5% |
+- **Theory-aware learning:** Rather than training a model purely on labelled prices, we minimise the Black–Scholes residual during optimisation. The network therefore respects absence-of-arbitrage dynamics.
+- **All Greeks from one model:** By treating volatility σ as an input alongside stock price S and time t, the PINN learns a smooth surface $V_\theta(S,t,\sigma)$. Once trained, $\Delta, \Gamma, \theta, \nu$, and $\rho$ are obtained via automatic differentiation without retraining.
+- **Efficiency vs. classical methods:** Finite differences are biased/noisy for higher-order Greeks, and Monte Carlo requires millions of paths. A trained PINN evaluates in milliseconds while remaining faithful to analytic solutions.
+- **Project objectives**
+  1. Demonstrate a single PINN that generalises across volatility regimes.
+  2. Benchmark it against analytic, finite-difference, and Monte Carlo baselines.
+  3. Investigate adaptive sampling strategies that concentrate learning on regions with high PDE residual.
 
 ---
 
-## 🧱 Repository Structure
+## 2. Repository Overview
 
 ```
-cs4644-pinn-greeks/
+Neural-PDE-Option-Greeks/
+├── README.md
+├── requirements.txt
+├── proposal.md                 # Initial pitch
+├── project_board.md            # Task tracker
 │
-├── README.md                 # Project overview and setup guide
-├── requirements.txt          # Python dependencies
-├── .gitignore                # Ignored files (datasets, logs, checkpoints)
-│
-├── src/                      # Source code
-│   ├── data.py               # Data generation & preprocessing
+├── src/                        # Importable package (`import src`)
+│   ├── __init__.py             # Shared path helpers (DATA_DIR, RESULTS_DIR, …)
+│   ├── preprocessing.py        # Log-moneyness / time-to-maturity normalisation
 │   ├── utils/
-│   │   └── black_scholes.py  # Analytic pricing and Greek functions
+│   │   └── black_scholes.py    # Closed-form Black–Scholes price & Greeks
+│   ├── baselines/
+│   │   ├── finite_difference.py
+│   │   └── monte_carlo.py
 │   ├── models/
-│   │   └── pinn_model.py     # PINN architecture (Residual Network)
-│   ├── losses.py             # Custom loss functions (L_price, L_PDE, etc.)
-│   ├── train.py              # Training loop & adaptive sampling
-│   └── eval.py               # Evaluation metrics and diagnostics
+│   │   └── pinn_model.py       # Residual MLP backbone
+│   ├── losses.py               # Physics-informed loss & PDE residual
+│   ├── data.py                 # Synthetic dataset generation (train/val/test)
+│   ├── train.py                # Training loop with warmup & adaptive sampling
+│   ├── eval.py                 # Price-surface visualisation
+│   └── test.py                 # Out-of-sample benchmarking CLI
 │
-├── notebooks/                # Jupyter notebooks for exploration
-│   ├── 01_data_visualization.ipynb
-│   ├── 02_baseline_experiments.ipynb
-│   └── 03_training_diagnostics.ipynb
+├── notebooks/
+│   ├── Sanity_Check.ipynb      # Lightweight end-to-end smoke test
+│   └── System_Stress_Test.ipynb# Regression notebook with configurable experiments
 │
-├── data/                     # Synthetic training and validation sets
-│   ├── synthetic_train.npy
-│   └── synthetic_val.npy
-│
-├── results/                  # Stored outputs, metrics, and tables
-│   ├── baseline_fd.csv
-│   ├── baseline_mc.csv
-│   ├── pinn_results.csv
-│   ├── ablation_study.csv
-│   └── logs/                 # Training logs and W&B runs
-│
-├── figures/                  # Visualizations and plots
-│   ├── data_exploration/
-│   ├── training_curves/
-│   ├── residual_heatmaps/
-│   └── final_results/
-│
-└── reports/                  # Written deliverables
-    ├── milestone/
-    │   └── milestone_report.pdf
-    ├── final/
-    │   └── final_report.pdf
-    └── poster/
-        └── poster.pdf
+├── data/                       # Generated `.npy` datasets (ignored by git)
+├── results/                    # Checkpoints & JSON summaries
+├── figures/                    # Generated plots (price surfaces, residuals, etc.)
+└── reports/                    # Milestone/final write-ups & poster drafts
 ```
 
 ---
 
-## ⚙️ Environment Setup
+## 3. Theoretical Background
 
-Create and activate a virtual environment:
+The Black–Scholes PDE for a European option with price function $V(S,t,\sigma)$ is
+
+$$
+\partial_t V + \tfrac{1}{2}\sigma^2 S^2 \partial_{SS}V + rS\partial_S V - rV = 0,
+$$
+
+with terminal payoff $V(T,S,\sigma) = \max(S - K, 0)$. In our PINN:
+
+- **Input features:** $(S, t, \sigma)$ transformed into log-moneyness $x = \log(S/K)$, time-to-maturity $ \tau = T - t $, and scaled to $[-1,1]$.
+- **Network:** Residual MLP (default 5×128) mapping features → scalar price $V_\theta$.
+- **Loss terms:**
+  - $L_{\text{price}} = \mathbb{E}[(V_\theta - V_{BS})^2]$,
+  - $L_{\text{PDE}} = \mathbb{E}[(\partial_t V_\theta + \ldots - rV_\theta)^2]$,
+  - $L_{\text{reg}} = \lambda \mathbb{E}[(\partial_S V_\theta)^2]$ (Sobolev regulariser for smooth $\Delta$).
+- **Automatic differentiation** provides $\partial_S V_\theta$, $\partial^2_{SS} V_\theta$, and $\partial_t V_\theta$ exactly, enabling reliable PDE residuals and Greek extraction.
+
+---
+
+## 4. Environment Setup
+
+1. **Create a virtual environment**
+
+   ```bash
+   python3 -m venv venv
+   source venv/bin/activate
+   pip install -r requirements.txt
+   ```
+
+2. **GPU users:** Install the CUDA-enabled PyTorch wheel matching your driver/toolkit, or let `pip install torch` select the CPU build.
+
+3. **Directory permissions:** Matplotlib warnings about non-writable cache directories can be resolved by setting `export MPLCONFIGDIR=$PWD/.mpl` before running scripts.
+
+---
+
+## 5. Data Generation & Preprocessing
+
+- Synthetic datasets are created from the analytic Black–Scholes formula with:
+  - $S \sim \text{Uniform}(20, 200)$,
+  - $t \sim \text{Uniform}(0.01, 2.0)$,
+  - $ \sigma \sim \text{Uniform}(0.05, 0.6)$.
+- We save `[S, t, σ, V]` tuples as `.npy` arrays in `data/`.
+- Preprocessing (implemented in `src.preprocessing.normalize_inputs`) converts raw inputs to log-moneyness and scaled time/volatility before they reach the network.
+
+To (re)generate the datasets (train/val/test) from the command line:
 
 ```bash
-python3 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
+python -m src.data \
+  --n-train 1000000 \
+  --n-val 100000 \
+  --n-test 100000 \
+  --seed 123
 ```
 
-### `requirements.txt`
-```
-torch>=2.1
-torchvision
-numpy
-scipy
-pandas
-matplotlib
-seaborn
-tqdm
-wandb
-jupyter
-```
-Optional (for LaTeX report compilation):
-```
-pylatexenc
-```
----
-
-## 💡 Implementation Details
-
-### **1. Data Generation**
-- Synthetic dataset generated from **Black–Scholes closed-form solution**.
-- Inputs: stock price (S), time to maturity (t), volatility (σ).  
-- Preprocessing: log-moneyness (x = ln(S/K)) and scaled time (τ = T–t).  
-- Training/validation split: 1,000,000 train / 100,000 validation points.
-
-### **2. Model Architecture**
-- Fully connected **Residual Network** (5 layers × 128 neurons, ReLU).  
-- Input: (S, t, σ) → Output: option price `Vθ(S, t, σ)`.  
-- Residual connections stabilize gradient flow across layers.
-
-### **3. Physics-Informed Loss**
-\`\`\`math
-L = L_{price} + α L_{PDE} + β L_{boundary} + λ‖∂_{SS}Vθ‖²
-\`\`\`
-- `L_price`: MSE between predicted and analytic prices.  
-- `L_PDE`: PDE residual enforcing the Black–Scholes equation.  
-- `L_boundary`: Terminal payoff condition \( V(T, S) = max(S-K, 0) \).  
-- `λ‖∂SSV‖²`: Sobolev penalty for smoother Γ estimates.  
-
-### **4. Baselines**
-1. **Black–Scholes analytic** (ground truth)  
-2. **Finite Difference** (ε-shift Δ, Γ)  
-3. **Monte Carlo** (pathwise estimator)  
-4. **Fixed-σ PINN** (retrained per volatility)
-
-### **5. Evaluation Metrics**
-| Metric | Description |
-|:--|:--|
-| **RMSE (V, Δ, Γ, Θ, ν)** | Error vs analytic Greeks |
-| **Total Variation (Γ)** | Smoothness measure |
-| **Runtime (ms)** | Inference efficiency |
-| **Training Stability** | Convergence under adaptive sampling |
+This writes `synthetic_train.npy`, `synthetic_val.npy`, and `synthetic_test.npy` into `data/`. Pass `--visualize` to emit quick histograms under `<output-dir>/figures/` so you can inspect the marginal distributions.
 
 ---
 
-## 🚀 How to Run
+## 6. Training the PINN
 
-### **Generate Data**
+`src.train.train` exposes the full training loop. You can call it from a Python script, the REPL, or a notebook.
+
+```python
+from src.train import train
+
+model, history = train(
+    epochs=50,
+    lr=1e-3,
+    batch_size=4096,
+    device="cuda",             # "cpu" or "cuda"
+    use_warmup=True,
+    warmup_steps=500,
+    grad_clip=1.0,
+    adaptive_sampling=True,
+    adaptive_every=5,
+    adaptive_points=10_000,
+    adaptive_radius=0.1,
+    adaptive_eval_samples=50_000,
+    checkpoint_path="results/pinn_checkpoint.pt",
+    save_checkpoint=True,
+)
+```
+
+### Command-line usage
+
 ```bash
-python src/data.py --n_train 1000000 --n_val 100000 --seed 42
+python -m src.train \
+    --epochs 25 \
+    --lr 5e-4 \
+    --batch-size 2048 \
+    --device cuda \
+    --adaptive-sampling \
+    --adaptive-every 5 \
+    --warmup-steps 300 \
+    --checkpoint-path results/pinn_checkpoint.pt
 ```
 
-### **Train PINN**
-```bash
-python src/train.py --epochs 100 --lr 1e-3 --batch_size 4096 --lambda_sobolev 0.01
+Use `--no-warmup` to disable the linear schedule and `--no-save-checkpoint` to skip writing weights. Add `--no-val` to skip validation or `--no-plots` to avoid saving charts. Run `python -m src.train -h` for the full list of options.
+
+By default training writes `results/training_history.json` and saves a loss-curve figure to `figures/training_curves/loss_curves.png`. Supply `--log-path` or `--plot-path` to customise locations.
+
+### Key training features
+
+- **Warmup scheduling:** When `use_warmup=True`, the learning rate ramps up linearly during the first `warmup_steps` optimiser steps.
+- **Adaptive sampling:** Periodically identifies collocation points with the largest PDE residuals, jitter-resamples their neighbourhoods, and augments the dataset. This stabilises learning in high-curvature regions that drive Γ.
+- **Validation loop:** When a validation set is provided, per-epoch metrics (`val_loss`, `val_pde`, …) are logged alongside training values.
+- **Device selection:** Pass `"cuda"` to leverage a GPU; the helper automatically falls back to CPU if CUDA is unavailable.
+- **Logging & plots:** History is stored as JSON and loss curves are rendered automatically (configurable via CLI flags).
+- **Checkpointing:** Controlled via `save_checkpoint` / `load_checkpoint`.
+
+---
+
+## 7. Evaluating Models & Baselines
+
+1. **Monte Carlo / finite-difference baselines**
+
+   ```python
+   from src.baselines import finite_diff_greeks, mc_pathwise_delta
+
+   S = 100.0
+   delta_fd, gamma_fd = finite_diff_greeks(S)
+   delta_mc = mc_pathwise_delta(S, seed=0, N=50_000)
+   ```
+
+   The Monte Carlo helper accepts either `seed` or a NumPy generator for reproducibility.
+
+2. **Price surface visualisation**
+
+   ```bash
+   python -m src.eval
+   ```
+
+   Customise the device, grid resolution, and export path:
+
+   ```bash
+   python -m src.eval \
+       --model-path results/pinn_checkpoint.pt \
+       --output-path figures/final_results/pinn_surface \
+       --device cuda \
+       --grid-points 150
+   ```
+
+   This loads `results/pinn_checkpoint.pt`, samples a grid over $S \in [20, 200]$ and $σ \in [0.05, 0.6]$, normalises the inputs, and emits both contour and 3D surface plots (look for `*_contour.png` and `*_3d.png` in `figures/final_results/`).
+
+3. **Out-of-sample evaluation**
+
+   ```bash
+   python -m src.test \
+       --data-path data/synthetic_test.npy \
+       --model-path results/pinn_checkpoint.pt \
+       --device cuda \
+       --sample-size 5000 \
+       --mc-paths 50000 \
+       --output results/oos_metrics.json \
+       --visualize \
+       --surface-grid 40
+   ```
+
+   The testing script compares the PINN against Black–Scholes analytics, finite differences, and Monte Carlo on a held-out set, printing MAE/RMSE diagnostics while saving both a JSON report and summary plots (default `results/figures/oos/`) including 2D overlays and 3D price/error surfaces. Adjust Monte Carlo paths, subsample size, or seeds to probe robustness.
+
+4. **Validation metrics**
+   The `System_Stress_Test.ipynb` notebook:
+   - reports dataset statistics,
+   - benchmarks baselines vs. analytic Greeks,
+   - runs training with your chosen configuration,
+   - computes MAE/RMSE for price and Greeks on a validation subset,
+   - renders PDE residual heatmaps & price contours,
+   - exports a JSON summary to `results/stress_test_summary.json`.
+
+---
+
+## 8. Notebooks
+
+- **Sanity_Check.ipynb** — lightweight smoke test to ensure imports, dataset generation, baselines, and a mini PINN run all work in your environment.
+- **System_Stress_Test.ipynb** — a regression harness with a CONFIG cell controlling device, warmup, adaptive sampling, batch size, checkpoint behaviour, and evaluation sample counts.
+
+Both notebooks keep outputs inside the repo’s `figures/` and `results/` directories so they can be versioned or cleaned easily.
+
+---
+
+## 9. Project Status & Next Steps
+
+Track progress in `project_board.md`. Completed milestones include:
+
+- ✅ Synthetic dataset generation & preprocessing
+- ✅ PINN architecture with physics-informed loss
+- ✅ Baselines (finite difference / Monte Carlo) with reproducible seeds
+- ✅ Adaptive sampling prototype and logging infrastructure
+- ✅ Stress-test notebook covering the entire pipeline
+
+Upcoming focus areas:
+
+- Full RMSE / runtime benchmarking
+- Hyperparameter sweeps (Sobolev λ, depth, warmup schedules)
+- Milestone report drafting and figure polishing
 ```
-
-### **Evaluate Baselines**
-```bash
-python src/eval.py --compare baselines
-```
-
-### **Plot Results**
-```bash
-python notebooks/03_training_diagnostics.ipynb
-```
-
----
-
-## 📊 Outputs & Visualizations
-
-Expected visual outputs include:
-
-- **Loss Curves:** L_price, L_PDE, L_boundary, total loss vs epoch  
-- **PDE Residual Heatmaps:** visualize model satisfaction of PDE constraints  
-- **Surface Plots:** Δ(S, σ), Γ(S, σ), ν(S, σ) across multiple expiries  
-- **RMSE Tables:** model vs baselines (Black–Scholes, FD, MC)  
-- **Ablation Charts:** performance vs network depth & Sobolev λ
-
----
-
-## 🧩 Future Extensions
-
-1. **Volatility Surface Calibration:** Extend from constant σ to implied volatility surfaces (SVI).  
-2. **PINN for Exotic Options:** Apply to barrier or Asian options with path dependency.  
-3. **Physics-Augmented Transformers:** Replace MLP with attention layers for higher flexibility.  
-4. **Greeks Sensitivity Analysis:** Use automatic differentiation to visualize interdependence of Greeks.
-
----
-
-## 👥 Team Members
-
-| Name | Role | Responsibilities | Contact |
-|:--|:--|:--|:--|
-| **Drew Verzino** | Model / Training Lead | Model architecture, training scripts, report writing | |
-| **Rahul Rajesh** | Math / PDE Lead | PINN loss design, PDE validation, theoretical background | |
-| **Aditya Deb** | Data & Preprocessing Lead | Synthetic data generation, scaling, baseline integration | |
-| **Navin Senthil** | Visualization / Reporting Lead | Diagnostic plots, LaTeX reports, poster design | |
-
----
-
-## 📚 References
-
-1. Raissi, M., Perdikaris, P., & Karniadakis, G. E. (2019). *Physics-informed neural networks: A deep learning framework for solving forward and inverse problems involving nonlinear PDEs.* Journal of Computational Physics, 378, 686–707.  
-2. Tanios, R. (2021). *Physics Informed Neural Networks in Computational Finance: High Dimensional Forward & Inverse Option Pricing.* ETH Zürich Thesis.  
-3. Bae, H.-O., Kang, S., & Lee, M. (2024). *Option Pricing and Local Volatility Surface by Physics-Informed Neural Network.* Computational Economics, 64(5), 3143–3159.  
-4. du Plooy, R., & Venter, P. (2024). *Approximating Option Greeks in a Classical and Multi-Curve Framework Using Artificial Neural Networks.* Journal of Risk and Financial Management, 17(4):140.  
-5. Gao, Q., Wang, Z., Zhang, R., & Wang, D. (2025). *Adaptive Movement Sampling Physics-Informed Residual Network (AM-PIRN) for Solving Nonlinear Option Pricing Models.* arXiv preprint arXiv:2504.03244.
-
----
-
-## 🧾 License
-
-This repository is for **academic use only** under the Georgia Tech CS 4644/7643 Deep Learning course. Redistribution or commercial use is prohibited without explicit permission from the course instructors.
-
----
-
-**© 2025 — Georgia Institute of Technology | CS 4644/7643 Deep Learning Project**

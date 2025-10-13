@@ -1,0 +1,40 @@
+{
+  "timestamp": "2025-10-13T23:31:19.886474Z",
+  "config": {
+    "train_epochs": 50,
+    "batch_size": 4096,
+    "learning_rate": 0.001,
+    "use_warmup": true,
+    "warmup_steps": 500,
+    "grad_clip": 1.0,
+    "adaptive_sampling": true,
+    "adaptive_every": 5,
+    "adaptive_points": 20000,
+    "adaptive_radius": 0.1,
+    "adaptive_eval_samples": 50000,
+    "baseline_samples": 1000,
+    "mc_paths": 20000,
+    "mc_eval_points": 25,
+    "num_val_samples": 5000,
+    "residual_grid": 40,
+    "load_existing_checkpoint": false,
+    "save_checkpoint": false,
+    "checkpoint_name": "pinn_checkpoint.pt",
+    "device": "cpu"
+  },
+  "evaluation": {
+    "N_eval": 200,
+    "price_mae": 6.398726087571362,
+    "price_rmse": 8.788776390998382,
+    "delta_mae": 0.09040983838824002,
+    "gamma_mae": 0.010774306024810077
+  },
+  "residual": {
+    "mean": -2.8435797691345215,
+    "std": 3.4899086952209473,
+    "max_abs": 14.194435119628906
+  },
+  "fd_delta_mae": 4.037401992084984e-09,
+  "fd_gamma_mae": 2.2920131843195024e-10,
+  "mc_delta_mean_abs_error": 0.0017797882404525472
+}
