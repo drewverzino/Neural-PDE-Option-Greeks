@@ -1,0 +1,10 @@
+torch>=2.1
+torchvision
+numpy
+scipy
+pandas
+matplotlib
+seaborn
+tqdm
+wandb          # optional for logging
+jupyter

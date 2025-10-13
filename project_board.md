@@ -49,25 +49,25 @@ This project integrates the **Black-Scholes PDE** into a neural network’s loss
 **Goal:** Implement full data + model pipeline and submit Milestone Report.
 
 ### Week 1 (Oct 13 – Oct 20): Environment + Data Pipeline
-- [ ] **Repo Setup** – `src/`, `data/`, `notebooks/`, `figures/`, `results/` **Owner:** 
-- [ ] **Install Env** – PyTorch 2.x, NumPy, Matplotlib, SciPy, pandas **Owner:** 
-- [ ] **Black-Scholes Utilities** – Implement `BS_price()` + analytic Δ Γ Θ ν ρ **Owner:** 
-- [ ] **Synthetic Dataset** – Generate 1 M train / 100 k val triplets (S, t, σ) **Owner:** 
+- [x] **Repo Setup** – `src/`, `data/`, `notebooks/`, `figures/`, `results/` **Owner:** Team
+- [x] **Install Env** – PyTorch 2.x, NumPy, Matplotlib, SciPy, pandas **Owner:** Team
+- [x] **Black-Scholes Utilities** – Implement `BS_price()` + analytic Δ Γ Θ ν ρ **Owner:** Team
+- [x] **Synthetic Dataset** – Generate 1 M train / 100 k val triplets (S, t, σ) **Owner:** Team
 - [ ] **Preprocessing** – x = ln(S/K), τ = T–t, normalize [–1, 1] **Owner:** 
-- [ ] **Visualization** – Plot price + Greek surfaces **Owner:** 
-- [ ] ✅ **Checkpoint 1:** Dataset + plots verified **Owner:** 
+- [x] **Visualization** – Plot price + Greek surfaces **Owner:** Team
+- [x] ✅ **Checkpoint 1:** Dataset + plots verified **Owner:** 
 
 ### Week 2 (Oct 21 – Oct 27): Baselines + Model Scaffolding
-- [ ] **Finite-Diff Baseline** – ε-shift Δ Γ; compare vs analytic **Owner:** 
-- [ ] **Monte Carlo Baseline** – GBM paths + pathwise Δ **Owner:** 
-- [ ] **PINN Model** – 5×128 ResNet layers + ReLU **Owner:** 
-- [ ] **Loss Functions** – `L_price`, `L_PDE`, `L_boundary`, Sobolev λ = 0.01 **Owner:** 
-- [ ] **Training Loop + Logging** – Adam, warm-up, grad clip = 1.0 **Owner:** 
+- [x] **Finite-Diff Baseline** – ε-shift Δ Γ; compare vs analytic **Owner:** Team
+- [x] **Monte Carlo Baseline** – GBM paths + pathwise Δ **Owner:** Team
+- [x] **PINN Model** – 5×128 ResNet layers + ReLU **Owner:** Team
+- [x] **Loss Functions** – `L_price`, `L_PDE`, `L_boundary`, Sobolev λ = 0.01 **Owner:** Team
+- [x] **Training Loop + Logging** – Adam, warm-up, grad clip = 1.0 **Owner:** Team
 - [ ] ✅ **Checkpoint 2:** Model runs 1 epoch cleanly **Owner:** 
 
 ### Week 3 (Oct 28 – Nov 3): Training + Milestone Report
 - [ ] **Base Training (50 epochs)** – Log loss curves (L_price, L_PDE) **Owner:** 
-- [ ] **Diagnostics + Visuals** – PDE residual heatmap, Δ/Γ surfaces **Owner:** 
+- [x] **Diagnostics + Visuals** – PDE residual heatmap, Δ/Γ surfaces **Owner:** Team
 - [ ] **Adaptive Sampling Prototype** – Top 10 k error resampling **Owner:** 
 - [ ] **RMSE Comparison** – PINN vs FD & MC baselines **Owner:** 
 - [ ] **Write Milestone Report** – Intro, Methods, Prelim Results, Next Steps **Owner:** 
@@ -148,10 +148,11 @@ This project integrates the **Black-Scholes PDE** into a neural network’s loss
 
 | 🧩 To Do | ⚙️ In Progress | 📊 Done |
 |:--|:--|:--|
-| Repo setup | Data pipeline | Dataset verified |
-| PINN architecture | Training loop | Milestone report |
-| Adaptive sampling | Hyperparameter tuning | Final report |
-| Poster design | — | Poster session |
+| Preprocessing pipeline | Base training (50 epochs) | Repo setup |
+| Adaptive sampling | RMSE benchmarking | Black-Scholes utilities |
+| Milestone report |  | Baselines & loss implementations |
+| Hyperparameter sweeps |  | Visualization diagnostics |
+| Poster design |  | Stress-test notebook |
 
 ---
 
