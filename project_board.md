@@ -155,6 +155,7 @@ This project integrates the **Black-Scholes PDE** into a neural network’s loss
 |  |  | Preprocessing & adaptive sampling |
 |  |  | Stress-test notebook |
 |  |  | OOS evaluation visuals + surfaces (2D/3D) |
+|  |  | End-to-end evaluation notebook |
 |  |  | OOS evaluation CLI |
 |  |  | Training curves & logs |
 

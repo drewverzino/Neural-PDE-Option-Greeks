@@ -87,6 +87,8 @@ def _evaluate_set(
     model: torch.nn.Module,
     loader: DataLoader,
     device: torch.device,
+    *,
+    lambda_reg: float,
 ) -> dict[str, float]:
     """Compute average loss components over a dataloader."""
     model.eval()
@@ -94,7 +96,7 @@ def _evaluate_set(
     steps = 0
     for batch in loader:
         S, t, sigma, V = [x.to(device) for x in batch]
-        loss, (L_price, L_PDE, L_reg) = pinn_loss(model, S, t, sigma, V)
+        loss, (L_price, L_PDE, L_reg) = pinn_loss(model, S, t, sigma, V, λ=lambda_reg)
         total_loss += loss.item()
         total_price += L_price.item()
         total_pde += L_PDE.item()
@@ -138,6 +140,7 @@ def train(
     plot_losses: bool = True,
     plot_path: Path | str = FIGURES_DIR / "training_curves" / "loss_curves.png",
     log_path: Path | str = RESULTS_DIR / "training_history.json",
+    lambda_reg: float = 0.01,
 ) -> Tuple[torch.nn.Module, List[dict[str, float]]]:
     """Train the PINN on mini-batches of synthetic Black-Scholes data."""
     device = _configure_device(device)
@@ -167,7 +170,7 @@ def train(
         for batch in loader:
             S, t, sigma, V = [x.to(device) for x in batch]
             opt.zero_grad()
-            loss, (L_price, L_PDE, L_reg) = pinn_loss(model, S, t, sigma, V)
+            loss, (L_price, L_PDE, L_reg) = pinn_loss(model, S, t, sigma, V, λ=lambda_reg)
 
             if use_warmup and warmup_steps > 0:
                 lr_scale = min(1.0, (global_step + 1) / warmup_steps)
@@ -195,7 +198,7 @@ def train(
             "lr": opt.param_groups[0]["lr"],
         }
         if val_loader is not None:
-            val_metrics = _evaluate_set(model, val_loader, device)
+            val_metrics = _evaluate_set(model, val_loader, device, lambda_reg=lambda_reg)
             log_entry.update(
                 {
                     "val_loss": val_metrics["loss"],
@@ -370,6 +373,12 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         default=RESULTS_DIR / "training_history.json",
         help="Where to save per-epoch metrics (JSON).",
     )
+    parser.add_argument(
+        "--lambda-reg",
+        type=float,
+        default=0.01,
+        help="Weight for the gradient regularization term in the loss.",
+    )
 
     parser.set_defaults(use_warmup=True, save_checkpoint=True, use_val=True, plot_losses=True)
     return parser
@@ -400,6 +409,7 @@ def main() -> None:
         plot_losses=args.plot_losses,
         plot_path=args.plot_path,
         log_path=args.log_path,
+        lambda_reg=args.lambda_reg,
     )
 
     if history:

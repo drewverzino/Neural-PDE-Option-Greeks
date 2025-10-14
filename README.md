@@ -42,8 +42,9 @@ Neural-PDE-Option-Greeks/
 │   └── test.py                 # Out-of-sample benchmarking CLI
 │
 ├── notebooks/
-│   ├── Sanity_Check.ipynb      # Lightweight end-to-end smoke test
-│   └── System_Stress_Test.ipynb# Regression notebook with configurable experiments
+│   ├── Sanity_Check.ipynb      # Lightweight smoke test
+│   ├── System_Stress_Test.ipynb# Regression notebook with configurable experiments
+│   └── End_to_End_Evaluation.ipynb # Full training/validation/testing pipeline
 │
 ├── data/                       # Generated `.npy` datasets (ignored by git)
 ├── results/                    # Checkpoints & JSON summaries
@@ -148,7 +149,8 @@ python -m src.train \
     --adaptive-sampling \
     --adaptive-every 5 \
     --warmup-steps 300 \
-    --checkpoint-path results/pinn_checkpoint.pt
+    --checkpoint-path results/pinn_checkpoint.pt \
+    --lambda-reg 0.01
 ```
 
 Use `--no-warmup` to disable the linear schedule and `--no-save-checkpoint` to skip writing weights. Add `--no-val` to skip validation or `--no-plots` to avoid saving charts. Run `python -m src.train -h` for the full list of options.
@@ -162,6 +164,7 @@ By default training writes `results/training_history.json` and saves a loss-curv
 - **Validation loop:** When a validation set is provided, per-epoch metrics (`val_loss`, `val_pde`, …) are logged alongside training values.
 - **Device selection:** Pass `"cuda"` to leverage a GPU; the helper automatically falls back to CPU if CUDA is unavailable.
 - **Logging & plots:** History is stored as JSON and loss curves are rendered automatically (configurable via CLI flags).
+- **Regularization control:** Tune `--lambda-reg` to scale the gradient-squared penalty term.
 - **Checkpointing:** Controlled via `save_checkpoint` / `load_checkpoint`.
 
 ---
@@ -229,6 +232,7 @@ By default training writes `results/training_history.json` and saves a loss-curv
 
 - **Sanity_Check.ipynb** — lightweight smoke test to ensure imports, dataset generation, baselines, and a mini PINN run all work in your environment.
 - **System_Stress_Test.ipynb** — a regression harness with a CONFIG cell controlling device, warmup, adaptive sampling, batch size, checkpoint behaviour, and evaluation sample counts.
+- **End_to_End_Evaluation.ipynb** — fully scripted pipeline that generates data, trains the PINN, evaluates on validation data, and benchmarks out-of-sample performance with visualizations.
 
 Both notebooks keep outputs inside the repo’s `figures/` and `results/` directories so they can be versioned or cleaned easily.
 
