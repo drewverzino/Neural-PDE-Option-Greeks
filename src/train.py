@@ -15,11 +15,13 @@ import plotly.graph_objects as go
 from . import DATA_DIR, FIGURES_DIR, RESULTS_DIR
 from .losses import compute_pde_residual, pinn_loss
 from .models import PINNModel
-from .preprocessing import K_REF, S_MAX, S_MIN, SIGMA_MAX, SIGMA_MIN, T_REF
+from .preprocessing import NormalizationConfig, load_normalization_config
 from .utils import bs_price
 
 
-def _build_dataloader(data: np.ndarray, batch_size: int, *, shuffle: bool) -> DataLoader:
+def _build_dataloader(
+    data: np.ndarray, batch_size: int, *, shuffle: bool
+) -> DataLoader:
     tensors = [torch.tensor(data[:, i], dtype=torch.float32) for i in range(4)]
     dataset = TensorDataset(*tensors)
     return DataLoader(dataset, batch_size=batch_size, shuffle=shuffle)
@@ -47,6 +49,7 @@ def _adaptive_resample(
     radius: float = 0.1,
     eval_samples: int = 50_000,
     device: torch.device,
+    config: NormalizationConfig,
 ) -> np.ndarray:
     """Augment the dataset near regions with the highest PDE residual."""
     model.eval()
@@ -58,26 +61,39 @@ def _adaptive_resample(
     idx = rng.choice(len(data), size=sample_size, replace=False)
     sample = data[idx]
 
-    S = torch.tensor(sample[:, 0], dtype=torch.float32, device=device, requires_grad=True)
-    t = torch.tensor(sample[:, 1], dtype=torch.float32, device=device, requires_grad=True)
+    S = torch.tensor(
+        sample[:, 0], dtype=torch.float32, device=device, requires_grad=True
+    )
+    t = torch.tensor(
+        sample[:, 1], dtype=torch.float32, device=device, requires_grad=True
+    )
     sigma = torch.tensor(sample[:, 2], dtype=torch.float32, device=device)
 
-    residual = compute_pde_residual(model, S, t, sigma).detach().cpu().numpy()
-    top_k = np.argsort(np.abs(residual))[-min(n_points, sample_size):]
+    residual = (
+        compute_pde_residual(model, S, t, sigma, r=config.r, config=config)
+        .detach()
+        .cpu()
+        .numpy()
+    )
+    top_k = np.argsort(np.abs(residual))[-min(n_points, sample_size) :]
     anchors = sample[top_k]
 
     # Jitter around the anchors while respecting domain bounds.
     S_anchor, t_anchor, sigma_anchor = anchors[:, 0], anchors[:, 1], anchors[:, 2]
-    S_new = np.clip(S_anchor * (1.0 + rng.normal(scale=radius, size=S_anchor.shape)), S_MIN, S_MAX)
+    S_new = np.clip(
+        S_anchor * (1.0 + rng.normal(scale=radius, size=S_anchor.shape)),
+        config.S_min,
+        config.S_max,
+    )
     t_noise = rng.normal(scale=radius * 0.2, size=t_anchor.shape)
-    t_new = np.clip(t_anchor + t_noise, 0.01, T_REF - 1e-3)
+    t_new = np.clip(t_anchor + t_noise, config.t_min, config.t_max)
     sigma_new = np.clip(
         sigma_anchor * (1.0 + rng.normal(scale=radius, size=sigma_anchor.shape)),
-        SIGMA_MIN,
-        SIGMA_MAX,
+        config.sigma_min,
+        config.sigma_max,
     )
 
-    V_new = bs_price(S_new, K_REF, T=T_REF, t=t_new, sigma=sigma_new)
+    V_new = bs_price(S_new, config.K, T=config.T, t=t_new, sigma=sigma_new, r=config.r)
     new_samples = np.stack([S_new, t_new, sigma_new, V_new], axis=1)
     augmented = np.concatenate([data, new_samples], axis=0)
     return augmented
@@ -89,24 +105,38 @@ def _evaluate_set(
     device: torch.device,
     *,
     lambda_reg: float,
+    boundary_weight: float,
+    config: NormalizationConfig,
 ) -> dict[str, float]:
     """Compute average loss components over a dataloader."""
     model.eval()
-    total_loss = total_price = total_pde = total_reg = 0.0
+    total_loss = total_price = total_pde = total_reg = total_boundary = 0.0
     steps = 0
     for batch in loader:
         S, t, sigma, V = [x.to(device) for x in batch]
-        loss, (L_price, L_PDE, L_reg) = pinn_loss(model, S, t, sigma, V, λ=lambda_reg)
+        loss, (L_price, L_PDE, L_reg, L_boundary) = pinn_loss(
+            model,
+            S,
+            t,
+            sigma,
+            V,
+            r=config.r,
+            λ=lambda_reg,
+            boundary_weight=boundary_weight,
+            config=config,
+        )
         total_loss += loss.item()
         total_price += L_price.item()
         total_pde += L_PDE.item()
         total_reg += L_reg.item()
+        total_boundary += L_boundary.item()
         steps += 1
     return {
         "loss": total_loss / steps,
         "price": total_price / steps,
         "pde": total_pde / steps,
         "reg": total_reg / steps,
+        "boundary": total_boundary / steps,
     }
 
 
@@ -141,6 +171,7 @@ def train(
     plot_path: Path | str = FIGURES_DIR / "training_curves" / "loss_curves.png",
     log_path: Path | str = RESULTS_DIR / "training_history.json",
     lambda_reg: float = 0.01,
+    boundary_weight: float = 1.0,
 ) -> Tuple[torch.nn.Module, List[dict[str, float]]]:
     """Train the PINN on mini-batches of synthetic Black-Scholes data."""
     device = _configure_device(device)
@@ -157,6 +188,7 @@ def train(
     global_step = 0
 
     loader, data = load_data(data_path, batch_size=batch_size, return_numpy=True)
+    config = load_normalization_config(Path(data_path).parent)
     val_loader: DataLoader | None = None
     if val_path is not None and Path(val_path).exists():
         val_data = np.load(val_path)
@@ -165,12 +197,22 @@ def train(
 
     for epoch in range(epochs):
         model.train()
-        total_loss = total_price = total_pde = total_reg = 0.0
+        total_loss = total_price = total_pde = total_reg = total_boundary = 0.0
         steps = 0
         for batch in loader:
             S, t, sigma, V = [x.to(device) for x in batch]
             opt.zero_grad()
-            loss, (L_price, L_PDE, L_reg) = pinn_loss(model, S, t, sigma, V, λ=lambda_reg)
+            loss, (L_price, L_PDE, L_reg, L_boundary) = pinn_loss(
+                model,
+                S,
+                t,
+                sigma,
+                V,
+                r=config.r,
+                λ=lambda_reg,
+                boundary_weight=boundary_weight,
+                config=config,
+            )
 
             if use_warmup and warmup_steps > 0:
                 lr_scale = min(1.0, (global_step + 1) / warmup_steps)
@@ -186,6 +228,7 @@ def train(
             total_price += L_price.item()
             total_pde += L_PDE.item()
             total_reg += L_reg.item()
+            total_boundary += L_boundary.item()
             steps += 1
             global_step += 1
 
@@ -195,16 +238,25 @@ def train(
             "price": total_price / steps,
             "pde": total_pde / steps,
             "reg": total_reg / steps,
+            "boundary": total_boundary / steps,
             "lr": opt.param_groups[0]["lr"],
         }
         if val_loader is not None:
-            val_metrics = _evaluate_set(model, val_loader, device, lambda_reg=lambda_reg)
+            val_metrics = _evaluate_set(
+                model,
+                val_loader,
+                device,
+                lambda_reg=lambda_reg,
+                boundary_weight=boundary_weight,
+                config=config,
+            )
             log_entry.update(
                 {
                     "val_loss": val_metrics["loss"],
                     "val_price": val_metrics["price"],
                     "val_pde": val_metrics["pde"],
                     "val_reg": val_metrics["reg"],
+                    "val_boundary": val_metrics.get("boundary", 0.0),
                 }
             )
         history.append(log_entry)
@@ -213,7 +265,8 @@ def train(
             f"loss={log_entry['loss']:.6f} | "
             f"price={log_entry['price']:.6f} | "
             f"pde={log_entry['pde']:.6f} | "
-            f"reg={log_entry['reg']:.6f}"
+            f"reg={log_entry['reg']:.6f} | "
+            f"boundary={log_entry['boundary']:.6f}"
         )
 
         if adaptive_sampling and (epoch + 1) % adaptive_every == 0:
@@ -224,6 +277,7 @@ def train(
                 radius=adaptive_radius,
                 eval_samples=adaptive_eval_samples,
                 device=device,
+                config=config,
             )
             loader = _build_dataloader(data, batch_size, shuffle=True)
 
@@ -250,6 +304,7 @@ def _plot_losses(history: List[dict[str, float]], plot_path: Path | str) -> None
     train_price = [entry["price"] for entry in history]
     train_pde = [entry["pde"] for entry in history]
     train_reg = [entry["reg"] for entry in history]
+    train_boundary = [entry.get("boundary", 0.0) for entry in history]
 
     plot_path = Path(plot_path)
     if plot_path.suffix.lower() != ".html":
@@ -257,21 +312,38 @@ def _plot_losses(history: List[dict[str, float]], plot_path: Path | str) -> None
     plot_path.parent.mkdir(parents=True, exist_ok=True)
 
     fig = go.Figure()
-    val_loss = val_price = val_pde = val_reg = None
+    val_loss = val_price = val_pde = val_reg = val_boundary = None
     fig.add_trace(go.Scatter(x=epochs, y=train_loss, name="Train loss"))
     fig.add_trace(go.Scatter(x=epochs, y=train_price, name="Train L_price"))
     fig.add_trace(go.Scatter(x=epochs, y=train_pde, name="Train L_PDE"))
     fig.add_trace(go.Scatter(x=epochs, y=train_reg, name="Train L_reg"))
+    fig.add_trace(go.Scatter(x=epochs, y=train_boundary, name="Train L_boundary"))
 
     if "val_loss" in history[0]:
         val_loss = [entry["val_loss"] for entry in history]
         val_pde = [entry["val_pde"] for entry in history]
         val_price = [entry["val_price"] for entry in history]
         val_reg = [entry["val_reg"] for entry in history]
-        fig.add_trace(go.Scatter(x=epochs, y=val_loss, name="Val loss", line=dict(dash="dash")))
-        fig.add_trace(go.Scatter(x=epochs, y=val_price, name="Val L_price", line=dict(dash="dash")))
-        fig.add_trace(go.Scatter(x=epochs, y=val_pde, name="Val L_PDE", line=dict(dash="dash")))
-        fig.add_trace(go.Scatter(x=epochs, y=val_reg, name="Val L_reg", line=dict(dash="dash")))
+        val_boundary = [entry.get("val_boundary", 0.0) for entry in history]
+        fig.add_trace(
+            go.Scatter(x=epochs, y=val_loss, name="Val loss", line=dict(dash="dash"))
+        )
+        fig.add_trace(
+            go.Scatter(
+                x=epochs, y=val_price, name="Val L_price", line=dict(dash="dash")
+            )
+        )
+        fig.add_trace(
+            go.Scatter(x=epochs, y=val_pde, name="Val L_PDE", line=dict(dash="dash"))
+        )
+        fig.add_trace(
+            go.Scatter(x=epochs, y=val_reg, name="Val L_reg", line=dict(dash="dash"))
+        )
+        fig.add_trace(
+            go.Scatter(
+                x=epochs, y=val_boundary, name="Val L_boundary", line=dict(dash="dash")
+            )
+        )
 
     fig.update_layout(
         title="PINN training curves",
@@ -290,13 +362,51 @@ def _plot_losses(history: List[dict[str, float]], plot_path: Path | str) -> None
     log_path = plot_path.with_name(plot_path.stem + "_log.html")
     fig_log = go.Figure()
     eps = 1e-12
-    fig_log.add_trace(go.Scatter(x=epochs, y=np.array(train_price) + eps, name="Train L_price"))
-    fig_log.add_trace(go.Scatter(x=epochs, y=np.array(train_pde) + eps, name="Train L_PDE"))
-    fig_log.add_trace(go.Scatter(x=epochs, y=np.array(train_reg) + eps, name="Train L_reg"))
+    fig_log.add_trace(
+        go.Scatter(x=epochs, y=np.array(train_price) + eps, name="Train L_price")
+    )
+    fig_log.add_trace(
+        go.Scatter(x=epochs, y=np.array(train_pde) + eps, name="Train L_PDE")
+    )
+    fig_log.add_trace(
+        go.Scatter(x=epochs, y=np.array(train_reg) + eps, name="Train L_reg")
+    )
+    fig_log.add_trace(
+        go.Scatter(x=epochs, y=np.array(train_boundary) + eps, name="Train L_boundary")
+    )
     if "val_loss" in history[0]:
-        fig_log.add_trace(go.Scatter(x=epochs, y=np.array(val_price) + eps, name="Val L_price", line=dict(dash="dash")))
-        fig_log.add_trace(go.Scatter(x=epochs, y=np.array(val_pde) + eps, name="Val L_PDE", line=dict(dash="dash")))
-        fig_log.add_trace(go.Scatter(x=epochs, y=np.array(val_reg) + eps, name="Val L_reg", line=dict(dash="dash")))
+        fig_log.add_trace(
+            go.Scatter(
+                x=epochs,
+                y=np.array(val_price) + eps,
+                name="Val L_price",
+                line=dict(dash="dash"),
+            )
+        )
+        fig_log.add_trace(
+            go.Scatter(
+                x=epochs,
+                y=np.array(val_pde) + eps,
+                name="Val L_PDE",
+                line=dict(dash="dash"),
+            )
+        )
+        fig_log.add_trace(
+            go.Scatter(
+                x=epochs,
+                y=np.array(val_reg) + eps,
+                name="Val L_reg",
+                line=dict(dash="dash"),
+            )
+        )
+        fig_log.add_trace(
+            go.Scatter(
+                x=epochs,
+                y=np.array(val_boundary) + eps,
+                name="Val L_boundary",
+                line=dict(dash="dash"),
+            )
+        )
     fig_log.update_layout(
         title="PINN component losses (log scale)",
         xaxis_title="Epoch",
@@ -312,7 +422,9 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Train the PINN model for option pricing and Greeks."
     )
-    parser.add_argument("--epochs", type=int, default=50, help="Number of training epochs.")
+    parser.add_argument(
+        "--epochs", type=int, default=50, help="Number of training epochs."
+    )
     parser.add_argument("--lr", type=float, default=1e-3, help="Initial learning rate.")
     parser.add_argument("--batch-size", type=int, default=4096, help="Mini-batch size.")
     parser.add_argument(
@@ -345,9 +457,24 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         help='Training device ("cpu" or "cuda").',
     )
 
-    parser.add_argument("--no-warmup", dest="use_warmup", action="store_false", help="Disable LR warmup.")
-    parser.add_argument("--warmup-steps", type=int, default=500, help="Number of warmup steps if enabled.")
-    parser.add_argument("--grad-clip", type=float, default=None, help="Gradient clipping norm (None to disable).")
+    parser.add_argument(
+        "--no-warmup",
+        dest="use_warmup",
+        action="store_false",
+        help="Disable LR warmup.",
+    )
+    parser.add_argument(
+        "--warmup-steps",
+        type=int,
+        default=500,
+        help="Number of warmup steps if enabled.",
+    )
+    parser.add_argument(
+        "--grad-clip",
+        type=float,
+        default=None,
+        help="Gradient clipping norm (None to disable).",
+    )
 
     parser.add_argument(
         "--adaptive-sampling",
@@ -415,8 +542,16 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         default=0.01,
         help="Weight for the gradient regularization term in the loss.",
     )
+    parser.add_argument(
+        "--boundary-weight",
+        type=float,
+        default=1.0,
+        help="Weight for the terminal/boundary condition loss.",
+    )
 
-    parser.set_defaults(use_warmup=True, save_checkpoint=True, use_val=True, plot_losses=True)
+    parser.set_defaults(
+        use_warmup=True, save_checkpoint=True, use_val=True, plot_losses=True
+    )
     return parser
 
 
@@ -446,6 +581,7 @@ def main() -> None:
         plot_path=args.plot_path,
         log_path=args.log_path,
         lambda_reg=args.lambda_reg,
+        boundary_weight=args.boundary_weight,
     )
 
     if history:

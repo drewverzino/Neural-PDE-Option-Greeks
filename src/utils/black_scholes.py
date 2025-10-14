@@ -25,12 +25,12 @@ def bs_price(S, K, T, t, sigma, r=0.05, option_type="call"):
         Which payoff to evaluate.
     """
     tau = T - t
-    d1 = (np.log(S/K) + (r + 0.5*sigma**2)*tau) / (sigma*np.sqrt(tau))
-    d2 = d1 - sigma*np.sqrt(tau)
+    d1 = (np.log(S / K) + (r + 0.5 * sigma**2) * tau) / (sigma * np.sqrt(tau))
+    d2 = d1 - sigma * np.sqrt(tau)
     if option_type == "call":
-        return S*norm.cdf(d1) - K*np.exp(-r*tau)*norm.cdf(d2)
+        return S * norm.cdf(d1) - K * np.exp(-r * tau) * norm.cdf(d2)
     else:
-        return K*np.exp(-r*tau)*norm.cdf(-d2) - S*norm.cdf(-d1)
+        return K * np.exp(-r * tau) * norm.cdf(-d2) - S * norm.cdf(-d1)
 
 
 def bs_greeks(S, K, T, t, sigma, r=0.05):
@@ -40,12 +40,12 @@ def bs_greeks(S, K, T, t, sigma, r=0.05):
     evaluated under the Black-Scholes assumptions for the supplied inputs.
     """
     tau = T - t
-    d1 = (np.log(S/K) + (r + 0.5*sigma**2)*tau) / (sigma*np.sqrt(tau))
-    d2 = d1 - sigma*np.sqrt(tau)
+    d1 = (np.log(S / K) + (r + 0.5 * sigma**2) * tau) / (sigma * np.sqrt(tau))
+    d2 = d1 - sigma * np.sqrt(tau)
     delta = norm.cdf(d1)
-    gamma = norm.pdf(d1)/(S*sigma*np.sqrt(tau))
-    theta = -(S*norm.pdf(d1)*sigma)/(2*np.sqrt(tau)) - \
-        r*K*np.exp(-r*tau)*norm.cdf(d2)
-    vega = S*norm.pdf(d1)*np.sqrt(tau)
-    rho = K*tau*np.exp(-r*tau)*norm.cdf(d2)
+    gamma = norm.pdf(d1) / (S * sigma * np.sqrt(tau))
+    price = bs_price(S, K, T, t, sigma, r)
+    theta = 0.5 * sigma**2 * S**2 * gamma + r * S * delta - r * price
+    vega = S * norm.pdf(d1) * np.sqrt(tau)
+    rho = K * tau * np.exp(-r * tau) * norm.cdf(d2)
     return dict(delta=delta, gamma=gamma, theta=theta, vega=vega, rho=rho)

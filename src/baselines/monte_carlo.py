@@ -36,8 +36,9 @@ def mc_pathwise_greeks(
     # Guard against T≈0 when computing theta
     theta_factor = r - 0.5 * sigma**2
     sqrt_term = np.where(sqrt_T > 0.0, 0.5 * sigma * Z / sqrt_T, 0.0)
-    theta_tau = discount * np.mean(-r * payoff + indicator * ST * (theta_factor + sqrt_term))
-    theta = -theta_tau
+    theta = discount * np.mean(
+        -r * payoff + indicator * ST * (theta_factor + sqrt_term)
+    )
 
     vega = discount * np.mean(indicator * ST * (sqrt_T * Z - sigma * T))
 
@@ -63,4 +64,6 @@ def mc_pathwise_delta(
     rng=None,
 ):
     """Backward-compatible wrapper returning only the pathwise delta estimate."""
-    return mc_pathwise_greeks(S0, K=K, T=T, r=r, sigma=sigma, N=N, seed=seed, rng=rng)["delta"]
+    return mc_pathwise_greeks(S0, K=K, T=T, r=r, sigma=sigma, N=N, seed=seed, rng=rng)[
+        "delta"
+    ]

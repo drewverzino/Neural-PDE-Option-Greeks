@@ -45,7 +45,7 @@ def finite_diff_greeks(
     V_up_t = bs_price(S, K, T, t_up, sigma, r)
     V_down_t = bs_price(S, K, T, t_down, sigma, r)
     denom_t = np.where(t_up != t_down, t_up - t_down, np.nan)
-    theta = (V_up_t - V_down_t) / denom_t
+    theta = -(V_up_t - V_down_t) / denom_t
 
     # Volatility derivative (vega)
     sigma_min = 1e-6

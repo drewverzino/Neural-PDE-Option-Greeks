@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
+import json
 
 import numpy as np
 
@@ -67,12 +68,22 @@ def generate_dataset(
     output_dir.mkdir(parents=True, exist_ok=True)
     for name, array in splits.items():
         np.save(output_dir / f"synthetic_{name}.npy", array)
+    metadata = {
+        "K": K,
+        "T": T,
+        "r": r,
+        "t_min": t_min,
+        "t_max": float(t_upper),
+        "s_bounds": list(s_bounds),
+        "sigma_bounds": list(sigma_bounds),
+    }
+    with open(output_dir / "synthetic_meta.json", "w", encoding="utf-8") as fp:
+        json.dump(metadata, fp, indent=2)
     print(
         "Generated datasets:",
         ", ".join(f"{name}={len(arr)}" for name, arr in splits.items()),
     )
     return splits
-
 
 
 def _visualize_splits(splits: dict[str, np.ndarray], output_dir: Path) -> None:
@@ -93,10 +104,20 @@ def _visualize_splits(splits: dict[str, np.ndarray], output_dir: Path) -> None:
                 f"{name} · Price vs S",
             ),
         )
-        fig.add_trace(go.Histogram(x=S, nbinsx=50, name="S", opacity=0.75), row=1, col=1)
-        fig.add_trace(go.Histogram(x=t, nbinsx=50, name="t", opacity=0.75), row=1, col=2)
-        fig.add_trace(go.Histogram(x=sigma, nbinsx=50, name="sigma", opacity=0.75), row=2, col=1)
-        fig.add_trace(go.Scatter(x=S, y=V, mode="markers", name="price", opacity=0.3), row=2, col=2)
+        fig.add_trace(
+            go.Histogram(x=S, nbinsx=50, name="S", opacity=0.75), row=1, col=1
+        )
+        fig.add_trace(
+            go.Histogram(x=t, nbinsx=50, name="t", opacity=0.75), row=1, col=2
+        )
+        fig.add_trace(
+            go.Histogram(x=sigma, nbinsx=50, name="sigma", opacity=0.75), row=2, col=1
+        )
+        fig.add_trace(
+            go.Scatter(x=S, y=V, mode="markers", name="price", opacity=0.3),
+            row=2,
+            col=2,
+        )
         fig.update_layout(height=700, width=900, template="plotly_white")
         fig.update_xaxes(title_text="S", row=1, col=1)
         fig.update_xaxes(title_text="t", row=1, col=2)
@@ -108,13 +129,24 @@ def _visualize_splits(splits: dict[str, np.ndarray], output_dir: Path) -> None:
         fig.update_yaxes(title_text="Price", row=2, col=2)
         fig.write_html(figures_dir / f"{name}_summary.html")
 
+
 def _build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Generate synthetic Black-Scholes datasets.")
-    parser.add_argument("--n-train", type=int, default=1_000_000, help="Number of training samples.")
-    parser.add_argument("--n-val", type=int, default=100_000, help="Number of validation samples.")
-    parser.add_argument("--n-test", type=int, default=100_000, help="Number of test samples.")
+    parser = argparse.ArgumentParser(
+        description="Generate synthetic Black-Scholes datasets."
+    )
+    parser.add_argument(
+        "--n-train", type=int, default=1_000_000, help="Number of training samples."
+    )
+    parser.add_argument(
+        "--n-val", type=int, default=100_000, help="Number of validation samples."
+    )
+    parser.add_argument(
+        "--n-test", type=int, default=100_000, help="Number of test samples."
+    )
     parser.add_argument("--strike", type=float, default=100.0, help="Strike price K.")
-    parser.add_argument("--maturity", type=float, default=2.0, help="Maturity T (years).")
+    parser.add_argument(
+        "--maturity", type=float, default=2.0, help="Maturity T (years)."
+    )
     parser.add_argument("--rate", type=float, default=0.05, help="Risk-free rate r.")
     parser.add_argument("--seed", type=int, default=42, help="Random seed.")
     parser.add_argument(

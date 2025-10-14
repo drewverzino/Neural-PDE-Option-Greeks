@@ -72,6 +72,8 @@ def evaluate(
         "surface_path": str(output_path),
         "grid_points": grid_points,
     }
+
+
 def _build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Render the PINN price surface.")
     parser.add_argument(
@@ -86,13 +88,27 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         default=FIGURES_DIR / "final_results" / "pinn_surface.html",
         help="Destination for the rendered contour plot.",
     )
-    parser.add_argument("--device", default="cpu", help='Computation device ("cpu" or "cuda").')
-    parser.add_argument("--grid-points", type=int, default=100, help="Number of grid points per axis.")
-    parser.add_argument("--s-min", type=float, default=20.0, help="Minimum stock price.")
-    parser.add_argument("--s-max", type=float, default=200.0, help="Maximum stock price.")
-    parser.add_argument("--sigma-min", type=float, default=0.05, help="Minimum volatility.")
-    parser.add_argument("--sigma-max", type=float, default=0.6, help="Maximum volatility.")
-    parser.add_argument("--time", type=float, default=1.0, help="Evaluation time (years).")
+    parser.add_argument(
+        "--device", default="cpu", help='Computation device ("cpu" or "cuda").'
+    )
+    parser.add_argument(
+        "--grid-points", type=int, default=100, help="Number of grid points per axis."
+    )
+    parser.add_argument(
+        "--s-min", type=float, default=20.0, help="Minimum stock price."
+    )
+    parser.add_argument(
+        "--s-max", type=float, default=200.0, help="Maximum stock price."
+    )
+    parser.add_argument(
+        "--sigma-min", type=float, default=0.05, help="Minimum volatility."
+    )
+    parser.add_argument(
+        "--sigma-max", type=float, default=0.6, help="Maximum volatility."
+    )
+    parser.add_argument(
+        "--time", type=float, default=1.0, help="Evaluation time (years)."
+    )
     return parser
 
 
