@@ -8,3 +8,4 @@ seaborn
 tqdm
 wandb          # optional for logging
 jupyter
+plotly

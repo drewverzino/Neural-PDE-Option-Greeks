@@ -5,8 +5,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
+import plotly.graph_objects as go
 import torch
 
 from . import FIGURES_DIR, RESULTS_DIR
@@ -24,7 +23,7 @@ def _configure_device(device: str | torch.device) -> torch.device:
 
 def evaluate(
     model_path: Path | str = RESULTS_DIR / "pinn_checkpoint.pt",
-    output_path: Path | str = FIGURES_DIR / "final_results" / "pinn_surface.png",
+    output_path: Path | str = FIGURES_DIR / "final_results" / "pinn_surface.html",
     *,
     device: str | torch.device = "cpu",
     grid_points: int = 100,
@@ -48,43 +47,31 @@ def evaluate(
         preds = model(features).reshape(grid_points, grid_points).cpu().numpy()
 
     output_path = Path(output_path)
+    if output_path.suffix.lower() != ".html":
+        output_path = output_path.with_suffix(".html")
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # 2D contour plot
-    plt.figure(figsize=(6, 4))
-    plt.contourf(S.cpu().numpy(), sigma.cpu().numpy(), preds.T, levels=50, cmap="viridis")
-    plt.colorbar(label="Predicted Price")
-    plt.xlabel("Stock Price S")
-    plt.ylabel("Volatility σ")
-    plt.title("PINN Option Surface (Contour)")
-    contour_path = output_path.with_name(output_path.stem + "_contour.png")
-    plt.savefig(contour_path, dpi=300)
-
-    # 3D surface plot
-    fig = plt.figure(figsize=(7, 5))
-    ax = fig.add_subplot(111, projection="3d")
-    ax.plot_surface(
-        Sg.cpu().numpy(),
-        Sigmag.cpu().numpy(),
-        preds,
-        cmap="viridis",
-        linewidth=0,
-        antialiased=True,
+    surface = go.Surface(
+        x=S.cpu().numpy(),
+        y=sigma.cpu().numpy(),
+        z=preds.T,
+        colorscale="Viridis",
     )
-    ax.set_xlabel("Stock Price S")
-    ax.set_ylabel("Volatility σ")
-    ax.set_zlabel("Predicted Price")
-    ax.set_title("PINN Option Surface (3D)")
-    surface_path = output_path.with_name(output_path.stem + "_3d.png")
-    plt.savefig(surface_path, dpi=300)
+    fig = go.Figure(surface)
+    fig.update_layout(
+        title="PINN price surface",
+        scene=dict(
+            xaxis_title="Stock Price S",
+            yaxis_title="Volatility σ",
+            zaxis_title="Predicted Price",
+        ),
+    )
+    fig.write_html(output_path)
 
     return {
-        "contour_path": str(contour_path),
-        "surface_path": str(surface_path),
+        "surface_path": str(output_path),
         "grid_points": grid_points,
     }
-
-
 def _build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Render the PINN price surface.")
     parser.add_argument(
@@ -96,7 +83,7 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--output-path",
         type=Path,
-        default=FIGURES_DIR / "final_results" / "pinn_surface.png",
+        default=FIGURES_DIR / "final_results" / "pinn_surface.html",
         help="Destination for the rendered contour plot.",
     )
     parser.add_argument("--device", default="cpu", help='Computation device ("cpu" or "cuda").')

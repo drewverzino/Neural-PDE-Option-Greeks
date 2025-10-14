@@ -109,7 +109,7 @@ python -m src.data \
   --seed 123
 ```
 
-This writes `synthetic_train.npy`, `synthetic_val.npy`, and `synthetic_test.npy` into `data/`. Pass `--visualize` to emit quick histograms under `<output-dir>/figures/` so you can inspect the marginal distributions.
+This writes `synthetic_train.npy`, `synthetic_val.npy`, and `synthetic_test.npy` into `data/`. Pass `--visualize` to emit interactive summary dashboards (`*.html`) under `<output-dir>/figures/` for quick sanity checks.
 
 ---
 
@@ -155,7 +155,7 @@ python -m src.train \
 
 Use `--no-warmup` to disable the linear schedule and `--no-save-checkpoint` to skip writing weights. Add `--no-val` to skip validation or `--no-plots` to avoid saving charts. Run `python -m src.train -h` for the full list of options.
 
-By default training writes `results/training_history.json` and saves a loss-curve figure to `figures/training_curves/loss_curves.png`. Supply `--log-path` or `--plot-path` to customise locations.
+By default training writes `results/training_history.json` and saves both linear and log-scale loss plots (`loss_curves.png`, `loss_curves_log.png`) under `figures/training_curves/`. Supply `--log-path`, `--plot-path`, or `--lambda-reg` to customise outputs.
 
 ### Key training features
 
@@ -215,7 +215,7 @@ By default training writes `results/training_history.json` and saves a loss-curv
        --surface-grid 40
    ```
 
-   The testing script compares the PINN against Black–Scholes analytics, finite differences, and Monte Carlo on a held-out set, printing MAE/RMSE diagnostics while saving both a JSON report and summary plots (default `results/figures/oos/`) including 2D overlays and 3D price/error surfaces. Adjust Monte Carlo paths, subsample size, or seeds to probe robustness.
+   The testing script compares the PINN against Black–Scholes analytics, finite differences, and Monte Carlo on a held-out set, printing MAE/RMSE diagnostics while saving both a JSON report and summary plots (default `results/figures/oos/`) including 2D overlays and 3D surfaces for price, Δ, and Γ (analytic vs. PINN plus error). Adjust Monte Carlo paths, subsample size, or seeds to probe robustness.
 
 4. **Validation metrics**
    The `System_Stress_Test.ipynb` notebook:

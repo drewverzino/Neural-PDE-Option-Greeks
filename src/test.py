@@ -7,11 +7,11 @@ import json
 from pathlib import Path
 from typing import Dict
 
-import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
 import numpy as np
 import torch
 
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 from . import DATA_DIR, RESULTS_DIR
 from .baselines import finite_diff_greeks, mc_pathwise_delta
 from .models import PINNModel
@@ -134,138 +134,136 @@ def _visualize_results(
     fig_dir.mkdir(parents=True, exist_ok=True)
 
     plot_count = min(len(S), 5000)
-    if len(S) > plot_count:
-        idx = np.linspace(0, len(S) - 1, plot_count, dtype=int)
-    else:
-        idx = np.arange(len(S))
+    idx = np.linspace(0, len(S) - 1, plot_count, dtype=int) if len(S) > plot_count else np.arange(len(S))
 
     diag_price = np.linspace(price_true.min(), price_true.max(), 100)
     diag_delta = np.linspace(delta_true.min(), delta_true.max(), 100)
     diag_gamma = np.linspace(gamma_true.min(), gamma_true.max(), 100)
 
-    fig, axes = plt.subplots(2, 2, figsize=(10, 8))
-    ax = axes[0, 0]
-    ax.scatter(price_true[idx], price_pred[idx], s=6, alpha=0.4, label="PINN")
-    ax.plot(diag_price, diag_price, color="black", linestyle="--", linewidth=1)
-    ax.set_title("Price: analytic vs PINN")
-    ax.set_xlabel("Analytic price")
-    ax.set_ylabel("PINN price")
-    ax.legend()
+    summary_fig = make_subplots(
+        rows=2,
+        cols=2,
+        subplot_titles=(
+            "Price: analytic vs PINN",
+            "Delta: analytic vs predictions",
+            "Delta error distribution",
+            "Gamma: analytic vs predictions",
+        ),
+    )
+    summary_fig.add_trace(
+        go.Scatter(x=price_true[idx], y=price_pred[idx], mode="markers", name="PINN"),
+        row=1,
+        col=1,
+    )
+    summary_fig.add_trace(
+        go.Scatter(x=diag_price, y=diag_price, mode="lines", name="diag", line=dict(dash="dash")),
+        row=1,
+        col=1,
+    )
 
-    ax = axes[0, 1]
-    ax.scatter(delta_true[idx], delta_pinn[idx], s=6, alpha=0.4, label="PINN")
-    ax.scatter(delta_true[idx], delta_fd[idx], s=6, alpha=0.4, label="Finite diff")
-    ax.scatter(delta_true[idx], delta_mc[idx], s=6, alpha=0.2, label="Monte Carlo")
-    ax.plot(diag_delta, diag_delta, color="black", linestyle="--", linewidth=1)
-    ax.set_title("Delta: analytic vs predictions")
-    ax.set_xlabel("Analytic Δ")
-    ax.set_ylabel("Predicted Δ")
-    ax.legend()
+    summary_fig.add_trace(go.Scatter(x=delta_true[idx], y=delta_pinn[idx], mode="markers", name="PINN"), 1, 2)
+    summary_fig.add_trace(go.Scatter(x=delta_true[idx], y=delta_fd[idx], mode="markers", name="Finite diff"), 1, 2)
+    summary_fig.add_trace(go.Scatter(x=delta_true[idx], y=delta_mc[idx], mode="markers", name="Monte Carlo"), 1, 2)
+    summary_fig.add_trace(go.Scatter(x=diag_delta, y=diag_delta, mode="lines", name="diag", line=dict(dash="dash")), 1, 2)
 
-    ax = axes[1, 0]
-    delta_err_pinn = delta_pinn - delta_true
-    delta_err_fd = delta_fd - delta_true
-    delta_err_mc = delta_mc - delta_true
-    bins = 60
-    ax.hist(delta_err_pinn, bins=bins, alpha=0.6, label="PINN")
-    ax.hist(delta_err_fd, bins=bins, alpha=0.6, label="Finite diff")
-    ax.hist(delta_err_mc, bins=bins, alpha=0.6, label="Monte Carlo")
-    ax.set_title("Delta error distribution")
-    ax.set_xlabel("Δ prediction error")
-    ax.set_ylabel("Frequency")
-    ax.legend()
+    summary_fig.add_trace(go.Histogram(x=delta_pinn - delta_true, name="PINN", opacity=0.6), 2, 1)
+    summary_fig.add_trace(go.Histogram(x=delta_fd - delta_true, name="Finite diff", opacity=0.6), 2, 1)
+    summary_fig.add_trace(go.Histogram(x=delta_mc - delta_true, name="Monte Carlo", opacity=0.6), 2, 1)
+    summary_fig.update_yaxes(title_text="Count", row=2, col=1)
+    summary_fig.update_xaxes(title_text="Δ prediction error", row=2, col=1)
 
-    ax = axes[1, 1]
-    ax.scatter(gamma_true[idx], gamma_pinn[idx], s=6, alpha=0.4, label="PINN")
-    ax.scatter(gamma_true[idx], gamma_fd[idx], s=6, alpha=0.4, label="Finite diff")
-    ax.plot(diag_gamma, diag_gamma, color="black", linestyle="--", linewidth=1)
-    ax.set_title("Gamma: analytic vs predictions")
-    ax.set_xlabel("Analytic Γ")
-    ax.set_ylabel("Predicted Γ")
-    ax.legend()
+    summary_fig.add_trace(go.Scatter(x=gamma_true[idx], y=gamma_pinn[idx], mode="markers", name="PINN"), 2, 2)
+    summary_fig.add_trace(go.Scatter(x=gamma_true[idx], y=gamma_fd[idx], mode="markers", name="Finite diff"), 2, 2)
+    summary_fig.add_trace(go.Scatter(x=diag_gamma, y=diag_gamma, mode="lines", name="diag", line=dict(dash="dash")), 2, 2)
 
-    fig.tight_layout()
-    fig.savefig(fig_dir / "oos_summary.png", dpi=200)
-    plt.close(fig)
+    summary_fig.update_xaxes(title_text="Analytic price", row=1, col=1)
+    summary_fig.update_yaxes(title_text="PINN price", row=1, col=1)
+    summary_fig.update_xaxes(title_text="Analytic Δ", row=1, col=2)
+    summary_fig.update_yaxes(title_text="Predicted Δ", row=1, col=2)
+    summary_fig.update_xaxes(title_text="Analytic Γ", row=2, col=2)
+    summary_fig.update_yaxes(title_text="Predicted Γ", row=2, col=2)
+    summary_fig.update_layout(height=800, width=1000, template="plotly_white")
+    summary_fig.write_html(fig_dir / "oos_summary.html")
 
-    fig, ax = plt.subplots(figsize=(6, 4))
-    ax.scatter(S[idx], price_true[idx] - price_pred[idx], s=6, alpha=0.5, label="Price error")
-    ax.set_xlabel("Stock price S")
-    ax.set_ylabel("Price error (analytic - PINN)")
-    ax.set_title("Price error vs stock price")
-    ax.legend()
-    fig.tight_layout()
-    fig.savefig(fig_dir / "price_error_vs_S.png", dpi=200)
-    plt.close(fig)
+    error_fig = go.Figure()
+    error_fig.add_trace(go.Scatter(x=S[idx], y=price_true[idx] - price_pred[idx], mode="markers", name="Price error"))
+    error_fig.update_layout(
+        title="Price error vs stock price",
+        xaxis_title="Stock price S",
+        yaxis_title="Price error (analytic - PINN)",
+        template="plotly_white",
+    )
+    error_fig.write_html(fig_dir / "price_error_vs_S.html")
 
     if surface_grid is not None and surface_grid > 1:
-        _plot_surface(fig_dir, S, sigma, price_true, price_pred, surface_grid)
+        components = [
+            ("price", price_true, price_pred),
+            ("delta", delta_true, delta_pinn),
+            ("gamma", gamma_true, gamma_pinn),
+        ]
+        _plot_component_surfaces(fig_dir, S, sigma, components, surface_grid)
 
-
-def _plot_surface(
+def _plot_component_surfaces(
     fig_dir: Path,
     S: np.ndarray,
     sigma: np.ndarray,
-    price_true: np.ndarray,
-    price_pred: np.ndarray,
+    components: list[tuple[str, np.ndarray, np.ndarray]],
     grid: int,
 ) -> None:
+    """Render 3D surfaces for analytic vs. PINN components (price/delta/gamma)."""
+
     grid = int(grid)
+    fig_dir = Path(fig_dir)
+    fig_dir.mkdir(parents=True, exist_ok=True)
+
     s_bins = np.linspace(S.min(), S.max(), grid + 1)
     sigma_bins = np.linspace(sigma.min(), sigma.max(), grid + 1)
     s_centers = 0.5 * (s_bins[:-1] + s_bins[1:])
     sigma_centers = 0.5 * (sigma_bins[:-1] + sigma_bins[1:])
+    S_grid, Sigma_grid = np.meshgrid(s_centers, sigma_centers, indexing="ij")
+
+    s_idx = np.clip(np.digitize(S, s_bins) - 1, 0, grid - 1)
+    sigma_idx = np.clip(np.digitize(sigma, sigma_bins) - 1, 0, grid - 1)
 
     def grid_average(values: np.ndarray) -> np.ndarray:
         surface = np.full((grid, grid), np.nan, dtype=float)
         counts = np.zeros((grid, grid), dtype=int)
-        s_idx = np.clip(np.digitize(S, s_bins) - 1, 0, grid - 1)
-        sigma_idx = np.clip(np.digitize(sigma, sigma_bins) - 1, 0, grid - 1)
-        for i, (si, sj) in enumerate(zip(s_idx, sigma_idx)):
-            surface[si, sj] = np.nan_to_num(surface[si, sj], nan=0.0) + values[i]
-            counts[si, sj] += 1
+        for idx_i, idx_j, val in zip(s_idx, sigma_idx, values):
+            if np.isnan(surface[idx_i, idx_j]):
+                surface[idx_i, idx_j] = 0.0
+            surface[idx_i, idx_j] += val
+            counts[idx_i, idx_j] += 1
         mask = counts > 0
-        surface[mask] = surface[mask] / counts[mask]
+        surface[mask] /= counts[mask]
         surface[~mask] = np.nan
         return surface
 
-    true_surface = grid_average(price_true)
-    pred_surface = grid_average(price_pred)
-    error_surface = grid_average(price_pred - price_true)
-
-    S_grid, Sigma_grid = np.meshgrid(s_centers, sigma_centers, indexing="ij")
-
-    def save_surface(data: np.ndarray, title: str, filename: str) -> None:
-        fig = plt.figure(figsize=(7, 5))
-        ax = fig.add_subplot(111, projection="3d")
-        filled = data.copy()
-        if np.isnan(filled).all():
+    def save_surface(data: np.ndarray, title: str, filename: str, zlabel: str) -> None:
+        if np.isnan(data).all():
             return
+        filled = data.copy()
         nan_mask = np.isnan(filled)
         if np.any(~nan_mask):
             filled[nan_mask] = np.nanmean(filled[~nan_mask])
-        ax.plot_surface(
-            S_grid,
-            Sigma_grid,
-            filled,
-            cmap="viridis",
-            linewidth=0,
-            antialiased=True,
+        fig = go.Figure(data=[go.Surface(x=S_grid, y=Sigma_grid, z=filled, colorscale="Viridis")])
+        fig.update_layout(
+            title=title,
+            scene=dict(
+                xaxis_title="Stock price S",
+                yaxis_title="Volatility σ",
+                zaxis_title=zlabel,
+            ),
         )
-        ax.set_xlabel("Stock price S")
-        ax.set_ylabel("Volatility σ")
-        ax.set_zlabel("Price")
-        ax.set_title(title)
-        fig.tight_layout()
-        fig.savefig(fig_dir / filename, dpi=200)
-        plt.close(fig)
+        fig.write_html(fig_dir / filename)
 
-    fig_dir = Path(fig_dir)
-    fig_dir.mkdir(parents=True, exist_ok=True)
-    save_surface(true_surface, "Analytic price surface", "analytic_surface.png")
-    save_surface(pred_surface, "PINN price surface", "pinn_surface.png")
-    save_surface(error_surface, "Price error surface (PINN - analytic)", "price_error_surface.png")
-
+    for name, true_vals, pred_vals in components:
+        true_surface = grid_average(true_vals)
+        pred_surface = grid_average(pred_vals)
+        error_surface = grid_average(pred_vals - true_vals)
+        capital = name.capitalize()
+        save_surface(true_surface, f"Analytic {capital} surface", f"analytic_{name}_surface.html", capital)
+        save_surface(pred_surface, f"PINN {capital} surface", f"pinn_{name}_surface.html", capital)
+        save_surface(error_surface, f"{capital} error surface (PINN - analytic)", f"{name}_error_surface.html", capital)
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Out-of-sample evaluation script.")

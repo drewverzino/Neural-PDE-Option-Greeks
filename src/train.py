@@ -7,11 +7,11 @@ import json
 from pathlib import Path
 from typing import List, Tuple
 
-import matplotlib.pyplot as plt
 import numpy as np
 import torch
 from torch.utils.data import DataLoader, TensorDataset
 
+import plotly.graph_objects as go
 from . import DATA_DIR, FIGURES_DIR, RESULTS_DIR
 from .losses import compute_pde_residual, pinn_loss
 from .models import PINNModel
@@ -249,27 +249,63 @@ def _plot_losses(history: List[dict[str, float]], plot_path: Path | str) -> None
     train_loss = [entry["loss"] for entry in history]
     train_price = [entry["price"] for entry in history]
     train_pde = [entry["pde"] for entry in history]
+    train_reg = [entry["reg"] for entry in history]
 
-    plt.figure(figsize=(7, 4.5))
-    plt.plot(epochs, train_loss, label="Train loss")
-    plt.plot(epochs, train_price, label="Train price")
-    plt.plot(epochs, train_pde, label="Train PDE")
+    plot_path = Path(plot_path)
+    if plot_path.suffix.lower() != ".html":
+        plot_path = plot_path.with_suffix(".html")
+    plot_path.parent.mkdir(parents=True, exist_ok=True)
+
+    fig = go.Figure()
+    val_loss = val_price = val_pde = val_reg = None
+    fig.add_trace(go.Scatter(x=epochs, y=train_loss, name="Train loss"))
+    fig.add_trace(go.Scatter(x=epochs, y=train_price, name="Train L_price"))
+    fig.add_trace(go.Scatter(x=epochs, y=train_pde, name="Train L_PDE"))
+    fig.add_trace(go.Scatter(x=epochs, y=train_reg, name="Train L_reg"))
 
     if "val_loss" in history[0]:
         val_loss = [entry["val_loss"] for entry in history]
         val_pde = [entry["val_pde"] for entry in history]
-        plt.plot(epochs, val_loss, label="Val loss", linestyle="--")
-        plt.plot(epochs, val_pde, label="Val PDE", linestyle="--")
+        val_price = [entry["val_price"] for entry in history]
+        val_reg = [entry["val_reg"] for entry in history]
+        fig.add_trace(go.Scatter(x=epochs, y=val_loss, name="Val loss", line=dict(dash="dash")))
+        fig.add_trace(go.Scatter(x=epochs, y=val_price, name="Val L_price", line=dict(dash="dash")))
+        fig.add_trace(go.Scatter(x=epochs, y=val_pde, name="Val L_PDE", line=dict(dash="dash")))
+        fig.add_trace(go.Scatter(x=epochs, y=val_reg, name="Val L_reg", line=dict(dash="dash")))
 
-    plt.xlabel("Epoch")
-    plt.ylabel("Loss")
-    plt.title("PINN training curves")
-    plt.legend()
-    plot_path = Path(plot_path)
-    plot_path.parent.mkdir(parents=True, exist_ok=True)
-    plt.tight_layout()
-    plt.savefig(plot_path, dpi=300)
-    plt.close()
+    fig.update_layout(
+        title="PINN training curves",
+        xaxis_title="Epoch",
+        yaxis_title="Loss",
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="center", x=0.5),
+        template="plotly_white",
+    )
+    fig.write_html(plot_path)
+
+    if "val_loss" in history[0]:
+        val_price = [entry["val_price"] for entry in history]
+        val_pde = [entry["val_pde"] for entry in history]
+        val_reg = [entry["val_reg"] for entry in history]
+
+    log_path = plot_path.with_name(plot_path.stem + "_log.html")
+    fig_log = go.Figure()
+    eps = 1e-12
+    fig_log.add_trace(go.Scatter(x=epochs, y=np.array(train_price) + eps, name="Train L_price"))
+    fig_log.add_trace(go.Scatter(x=epochs, y=np.array(train_pde) + eps, name="Train L_PDE"))
+    fig_log.add_trace(go.Scatter(x=epochs, y=np.array(train_reg) + eps, name="Train L_reg"))
+    if "val_loss" in history[0]:
+        fig_log.add_trace(go.Scatter(x=epochs, y=np.array(val_price) + eps, name="Val L_price", line=dict(dash="dash")))
+        fig_log.add_trace(go.Scatter(x=epochs, y=np.array(val_pde) + eps, name="Val L_PDE", line=dict(dash="dash")))
+        fig_log.add_trace(go.Scatter(x=epochs, y=np.array(val_reg) + eps, name="Val L_reg", line=dict(dash="dash")))
+    fig_log.update_layout(
+        title="PINN component losses (log scale)",
+        xaxis_title="Epoch",
+        yaxis_title="Loss",
+        yaxis_type="log",
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="center", x=0.5),
+        template="plotly_white",
+    )
+    fig_log.write_html(log_path)
 
 
 def _build_arg_parser() -> argparse.ArgumentParser:

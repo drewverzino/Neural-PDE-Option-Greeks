@@ -5,8 +5,10 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-import matplotlib.pyplot as plt
 import numpy as np
+
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 
 from . import DATA_DIR
 from .utils import bs_price
@@ -72,38 +74,39 @@ def generate_dataset(
     return splits
 
 
+
 def _visualize_splits(splits: dict[str, np.ndarray], output_dir: Path) -> None:
-    """Create simple sanity plots for the generated datasets."""
+    """Create interactive sanity plots for the generated datasets."""
     output_dir = Path(output_dir)
     figures_dir = output_dir / "figures"
     figures_dir.mkdir(parents=True, exist_ok=True)
 
     for name, data in splits.items():
         S, t, sigma, V = data.T
-        fig, axes = plt.subplots(2, 2, figsize=(8, 6))
-        axes = axes.flatten()
-
-        axes[0].hist(S, bins=50, color="tab:blue", alpha=0.75)
-        axes[0].set_title(f"{name} · Stock price S")
-        axes[0].set_xlabel("S")
-
-        axes[1].hist(t, bins=50, color="tab:green", alpha=0.75)
-        axes[1].set_title(f"{name} · Calendar time t")
-        axes[1].set_xlabel("t")
-
-        axes[2].hist(sigma, bins=50, color="tab:orange", alpha=0.75)
-        axes[2].set_title(f"{name} · Volatility σ")
-        axes[2].set_xlabel("σ")
-
-        axes[3].scatter(S, V, s=2, alpha=0.3)
-        axes[3].set_title(f"{name} · Price vs S")
-        axes[3].set_xlabel("S")
-        axes[3].set_ylabel("Price")
-
-        fig.tight_layout()
-        fig.savefig(figures_dir / f"{name}_histograms.png", dpi=200)
-        plt.close(fig)
-
+        fig = make_subplots(
+            rows=2,
+            cols=2,
+            subplot_titles=(
+                f"{name} · Stock price S",
+                f"{name} · Calendar time t",
+                f"{name} · Volatility σ",
+                f"{name} · Price vs S",
+            ),
+        )
+        fig.add_trace(go.Histogram(x=S, nbinsx=50, name="S", opacity=0.75), row=1, col=1)
+        fig.add_trace(go.Histogram(x=t, nbinsx=50, name="t", opacity=0.75), row=1, col=2)
+        fig.add_trace(go.Histogram(x=sigma, nbinsx=50, name="sigma", opacity=0.75), row=2, col=1)
+        fig.add_trace(go.Scatter(x=S, y=V, mode="markers", name="price", opacity=0.3), row=2, col=2)
+        fig.update_layout(height=700, width=900, template="plotly_white")
+        fig.update_xaxes(title_text="S", row=1, col=1)
+        fig.update_xaxes(title_text="t", row=1, col=2)
+        fig.update_xaxes(title_text="σ", row=2, col=1)
+        fig.update_xaxes(title_text="S", row=2, col=2)
+        fig.update_yaxes(title_text="Count", row=1, col=1)
+        fig.update_yaxes(title_text="Count", row=1, col=2)
+        fig.update_yaxes(title_text="Count", row=2, col=1)
+        fig.update_yaxes(title_text="Price", row=2, col=2)
+        fig.write_html(figures_dir / f"{name}_summary.html")
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Generate synthetic Black-Scholes datasets.")
