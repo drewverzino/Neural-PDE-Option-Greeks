@@ -56,6 +56,14 @@ class NormalizationConfig:
     def x_max(self) -> float:
         return float(torch.log(torch.tensor(self.S_max / self.K)))
 
+    @property
+    def sigma_range(self) -> float:
+        return self.sigma_max - self.sigma_min
+
+    @property
+    def tau_range(self) -> float:
+        return self.tau_max - self.tau_min
+
 
 def _to_tensor(value: float | Iterable[float], template: torch.Tensor) -> torch.Tensor:
     """Create a tensor on the same device/dtype as the template."""

@@ -45,7 +45,7 @@ def bs_greeks(S, K, T, t, sigma, r=0.05):
     delta = norm.cdf(d1)
     gamma = norm.pdf(d1) / (S * sigma * np.sqrt(tau))
     price = bs_price(S, K, T, t, sigma, r)
-    theta = 0.5 * sigma**2 * S**2 * gamma + r * S * delta - r * price
+    theta = -(0.5 * sigma**2 * S**2 * gamma + r * S * delta - r * price)
     vega = S * norm.pdf(d1) * np.sqrt(tau)
     rho = K * tau * np.exp(-r * tau) * norm.cdf(d2)
     return dict(delta=delta, gamma=gamma, theta=theta, vega=vega, rho=rho)

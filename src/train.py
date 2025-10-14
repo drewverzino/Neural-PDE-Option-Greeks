@@ -200,6 +200,7 @@ def train(
     boundary_weight: float = 1.0,
     num_workers: int | None = None,
     pin_memory: bool | None = None,
+    boundary_warmup: int = 10,
 ) -> Tuple[torch.nn.Module, List[dict[str, float]]]:
     """Train the PINN on mini-batches of synthetic Black-Scholes data."""
     device = _configure_device(device)
@@ -243,6 +244,11 @@ def train(
         for batch in loader:
             S, t, sigma, V = [x.to(device) for x in batch]
             opt.zero_grad()
+            if boundary_weight > 0.0 and boundary_warmup > 0:
+                boundary_scale = min(1.0, (epoch + 1) / boundary_warmup)
+            else:
+                boundary_scale = 1.0
+            current_boundary_weight = boundary_weight * boundary_scale
             loss, (L_price, L_PDE, L_reg, L_boundary) = pinn_loss(
                 model,
                 S,
@@ -251,7 +257,7 @@ def train(
                 V,
                 r=config.r,
                 λ=lambda_reg,
-                boundary_weight=boundary_weight,
+                boundary_weight=current_boundary_weight,
                 config=config,
             )
 
@@ -281,6 +287,7 @@ def train(
             "reg": total_reg / steps,
             "boundary": total_boundary / steps,
             "lr": opt.param_groups[0]["lr"],
+            "boundary_weight": current_boundary_weight,
         }
         if val_loader is not None:
             val_metrics = _evaluate_set(
@@ -307,7 +314,8 @@ def train(
             f"price={log_entry['price']:.6f} | "
             f"pde={log_entry['pde']:.6f} | "
             f"reg={log_entry['reg']:.6f} | "
-            f"boundary={log_entry['boundary']:.6f}"
+            f"boundary={log_entry['boundary']:.6f} "
+            f"(scaled: {current_boundary_weight * log_entry['boundary']:.6f})"
         )
 
         if adaptive_sampling and (epoch + 1) % adaptive_every == 0:
@@ -595,6 +603,12 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         default=1.0,
         help="Weight for the terminal/boundary condition loss.",
     )
+    parser.add_argument(
+        "--boundary-warmup",
+        type=int,
+        default=10,
+        help="Epochs over which to ramp the boundary weight (0 to disable).",
+    )
 
     parser.set_defaults(
         use_warmup=True, save_checkpoint=True, use_val=True, plot_losses=True
@@ -629,6 +643,7 @@ def main() -> None:
         log_path=args.log_path,
         lambda_reg=args.lambda_reg,
         boundary_weight=args.boundary_weight,
+        boundary_warmup=args.boundary_warmup,
     )
 
     if history:

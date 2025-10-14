@@ -63,39 +63,53 @@ def evaluate_oos(
     model.load_state_dict(torch.load(model_path, map_location=device))
     model.eval()
 
-    S = torch.tensor(S_np, dtype=torch.float32, device=device, requires_grad=True)
-    t = torch.tensor(t_np, dtype=torch.float32, device=device, requires_grad=True)
-    sigma = torch.tensor(
-        sigma_np, dtype=torch.float32, device=device, requires_grad=True
-    )
+    S = torch.tensor(S_np, dtype=torch.float32, device=device)
+    t = torch.tensor(t_np, dtype=torch.float32, device=device)
+    sigma = torch.tensor(sigma_np, dtype=torch.float32, device=device)
 
     features = normalize_inputs(S, t, sigma, config=config)
+    features = features.detach().clone().requires_grad_(True)
     pred_price = model(features).squeeze()
 
     ones = torch.ones_like(pred_price)
-
-    # Compute delta with create_graph=True (needed for gamma)
-    delta_pred = torch.autograd.grad(
-        pred_price, S, grad_outputs=ones, create_graph=True, retain_graph=True
-    )[0]
-
-    # Compute gamma next (second-order derivative)
-    gamma_pred = torch.autograd.grad(
-        delta_pred,
-        S,
-        grad_outputs=torch.ones_like(delta_pred),
-        create_graph=False,
+    grad_feats = torch.autograd.grad(
+        pred_price,
+        features,
+        grad_outputs=ones,
+        create_graph=True,
         retain_graph=True,
     )[0]
 
-    # Now compute the remaining first-order derivatives
-    theta_pred = -torch.autograd.grad(
-        pred_price, t, grad_outputs=ones, create_graph=False, retain_graph=True
-    )[0]
+    grad_x_norm = grad_feats[:, 0]
+    grad_tau_norm = grad_feats[:, 1]
+    grad_sigma_norm = grad_feats[:, 2]
 
-    vega_pred = torch.autograd.grad(
-        pred_price, sigma, grad_outputs=ones, create_graph=False, retain_graph=True
+    # ✅ FIXED: Compute second derivative w.r.t. features
+    d2_feats = torch.autograd.grad(
+        grad_x_norm,
+        features,
+        grad_outputs=torch.ones_like(grad_x_norm),
+        create_graph=True,
+        retain_graph=True,
     )[0]
+    d2V_dx_norm2 = d2_feats[:, 0]
+
+    x_range = max(config.x_max - config.x_min, 1e-6)
+    tau_range = max(config.tau_range, 1e-6)
+    sigma_range = max(config.sigma_range, 1e-6)
+
+    dx_norm_dx = 2.0 / x_range
+    dtau_norm_dtau = 2.0 / tau_range
+    dsigma_norm_dsigma = 2.0 / sigma_range
+
+    dV_dx = grad_x_norm * dx_norm_dx
+    delta_pred = dV_dx / S
+
+    d2V_dx2 = d2V_dx_norm2 * (dx_norm_dx**2)
+    gamma_pred = d2V_dx2 * (1.0 / (S**2)) + dV_dx * (-1.0 / (S**2))
+
+    theta_pred = -(grad_tau_norm * dtau_norm_dtau)
+    vega_pred = grad_sigma_norm * dsigma_norm_dsigma
 
     pred_price_np = pred_price.detach().cpu().numpy()
     delta_pred_np = delta_pred.detach().cpu().numpy()
