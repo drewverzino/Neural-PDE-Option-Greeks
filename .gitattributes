@@ -1,6 +1,5 @@
 # Auto detect text files and perform LF normalization
 * text=auto
-
 # Python files
 *.py text eol=lf
 *.pyx text eol=lf
@@ -57,4 +56,5 @@
 *.7z binary
 # PDFs
 *.pdf binary
+figures/**/*.html filter=lfs diff=lfs merge=lfs -text
 notebooks/End_to_end_Evaluation.ipynb filter=lfs diff=lfs merge=lfs -text
