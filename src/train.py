@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from pathlib import Path
 from typing import List, Tuple
 
@@ -20,11 +21,28 @@ from .utils import bs_price
 
 
 def _build_dataloader(
-    data: np.ndarray, batch_size: int, *, shuffle: bool
+    data: np.ndarray,
+    batch_size: int,
+    *,
+    shuffle: bool,
+    num_workers: int | None = None,
+    pin_memory: bool = False,
 ) -> DataLoader:
     tensors = [torch.tensor(data[:, i], dtype=torch.float32) for i in range(4)]
     dataset = TensorDataset(*tensors)
-    return DataLoader(dataset, batch_size=batch_size, shuffle=shuffle)
+    loader_kwargs = {
+        "batch_size": batch_size,
+        "shuffle": shuffle,
+    }
+    if num_workers is not None:
+        loader_kwargs.update(
+            {
+                "num_workers": num_workers,
+                "pin_memory": pin_memory,
+                "persistent_workers": num_workers > 0,
+            }
+        )
+    return DataLoader(dataset, **loader_kwargs)
 
 
 def load_data(
@@ -32,10 +50,18 @@ def load_data(
     batch_size: int = 4096,
     *,
     return_numpy: bool = False,
+    num_workers: int | None = None,
+    pin_memory: bool = False,
 ) -> DataLoader | Tuple[DataLoader, np.ndarray]:
     """Load the synthetic training set and wrap it in a DataLoader."""
     data = np.load(path)
-    loader = _build_dataloader(data, batch_size, shuffle=True)
+    loader = _build_dataloader(
+        data,
+        batch_size,
+        shuffle=True,
+        num_workers=num_workers,
+        pin_memory=pin_memory,
+    )
     if return_numpy:
         return loader, data
     return loader
@@ -172,6 +198,8 @@ def train(
     log_path: Path | str = RESULTS_DIR / "training_history.json",
     lambda_reg: float = 0.01,
     boundary_weight: float = 1.0,
+    num_workers: int | None = None,
+    pin_memory: bool | None = None,
 ) -> Tuple[torch.nn.Module, List[dict[str, float]]]:
     """Train the PINN on mini-batches of synthetic Black-Scholes data."""
     device = _configure_device(device)
@@ -187,12 +215,25 @@ def train(
     base_lr = lr
     global_step = 0
 
-    loader, data = load_data(data_path, batch_size=batch_size, return_numpy=True)
+    use_cuda = device.type == "cuda"
+    loader, data = load_data(
+        data_path,
+        batch_size=batch_size,
+        return_numpy=True,
+        num_workers=num_workers,
+        pin_memory=pin_memory,
+    )
     config = load_normalization_config(Path(data_path).parent)
     val_loader: DataLoader | None = None
     if val_path is not None and Path(val_path).exists():
         val_data = np.load(val_path)
-        val_loader = _build_dataloader(val_data, batch_size, shuffle=False)
+        val_loader = _build_dataloader(
+            val_data,
+            batch_size,
+            shuffle=False,
+            num_workers=num_workers,
+            pin_memory=pin_memory,
+        )
     history: List[dict[str, float]] = []
 
     for epoch in range(epochs):
@@ -279,7 +320,13 @@ def train(
                 device=device,
                 config=config,
             )
-            loader = _build_dataloader(data, batch_size, shuffle=True)
+            loader = _build_dataloader(
+                data,
+                batch_size,
+                shuffle=True,
+                num_workers=num_workers,
+                pin_memory=pin_memory,
+            )
 
     if save_checkpoint:
         checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
