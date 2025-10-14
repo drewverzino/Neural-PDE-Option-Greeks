@@ -27,29 +27,30 @@ Neural-PDE-Option-Greeks/
 │
 ├── src/                        # Importable package (`import src`)
 │   ├── __init__.py             # Shared path helpers (DATA_DIR, RESULTS_DIR, …)
+│   ├── data.py                 # Synthetic dataset generation + metadata export
 │   ├── preprocessing.py        # Log-moneyness / time-to-maturity normalisation
-│   ├── utils/
-│   │   └── black_scholes.py    # Closed-form Black–Scholes price & Greeks
+│   ├── losses.py               # Physics-informed loss & PDE residual terms
+│   ├── train.py                # Training loop with warmup, adaptive sampling, logging
+│   ├── eval.py                 # Standalone PINN price-surface renderer (Plotly HTML)
+│   ├── test.py                 # OOS benchmarking CLI for price & Greeks
 │   ├── baselines/
 │   │   ├── finite_difference.py
 │   │   └── monte_carlo.py
 │   ├── models/
-│   │   └── pinn_model.py       # Residual MLP backbone
-│   ├── losses.py               # Physics-informed loss & PDE residual
-│   ├── data.py                 # Synthetic dataset generation (train/val/test)
-│   ├── train.py                # Training loop with warmup & adaptive sampling
-│   ├── eval.py                 # Price-surface visualisation
-│   └── test.py                 # Out-of-sample benchmarking CLI
+│   │   └── pinn_model.py       # Residual tanh blocks with LayerNorm stabilisation
+│   └── utils/
+│       └── black_scholes.py    # Closed-form Black–Scholes price & Greeks
 │
 ├── notebooks/
-│   ├── Sanity_Check.ipynb      # Lightweight smoke test
-│   ├── System_Stress_Test.ipynb# Regression notebook with configurable experiments
-│   └── End_to_End_Evaluation.ipynb # Full training/validation/testing pipeline
+│   ├── Sanity_Check.ipynb          # Lightweight smoke test
+│   ├── System_Stress_Test.ipynb    # Configurable regression harness
+│   ├── End_to_End_Evaluation.ipynb # Full training/validation/testing pipeline
+│   └── full_run_evaluation.ipynb   # Reproducible run used for the proposal package
 │
-├── data/                       # Generated `.npy` datasets (ignored by git)
-├── results/                    # Checkpoints & JSON summaries
-├── figures/                    # Generated plots (price surfaces, residuals, etc.)
-└── reports/                    # Milestone/final write-ups & poster drafts
+├── data/                       # Generated `.npy` splits + synthetic_meta.json
+├── results/                    # Checkpoints, metrics JSON, exported Plotly dashboards
+├── figures/                    # Notebook-generated figures (HTML / PNG)
+└── reports/                    # Milestone/final write-ups (placeholder)
 ```
 
 ---
@@ -65,7 +66,7 @@ $$
 with terminal payoff $V(T,S,\sigma) = \max(S - K, 0)$. In our PINN:
 
 - **Input features:** $(S, t, \sigma)$ transformed into log-moneyness $x = \log(S/K)$, time-to-maturity $\tau = T - t$, and scaled to $[-1,1]$.
-- **Network:** Residual MLP (default 5×128) mapping features → scalar price $V_\theta$.
+- **Network:** Residual tanh trunk (default 5×128) with LayerNorm-stabilised skip blocks mapping features → scalar price $V_\theta$.
 - **Loss terms:**
   - $L_{\text{price}} = \mathbb{E}[(V_\theta - V_{BS})^2]$,
   - $L_{\text{PDE}} = \mathbb{E}[(\partial_t V_\theta + \ldots - rV_\theta)^2]$,
@@ -97,6 +98,7 @@ with terminal payoff $V(T,S,\sigma) = \max(S - K, 0)$. In our PINN:
   - $t \sim \text{Uniform}(0.01, 2.0)$,
   - $\sigma \sim \text{Uniform}(0.05, 0.6)$.
 - We save `[S, t, σ, V]` tuples as `.npy` arrays in `data/`.
+- Contract parameters and sampling bounds are also written to `data/synthetic_meta.json` so training/evaluation scripts can load a consistent `NormalizationConfig`.
 - Preprocessing (implemented in `src.preprocessing.normalize_inputs`) converts raw inputs to log-moneyness and scaled time/volatility before they reach the network.
 
 To (re)generate the datasets (train/val/test) from the command line:
@@ -155,7 +157,7 @@ python -m src.train \
 
 Use `--no-warmup` to disable the linear schedule and `--no-save-checkpoint` to skip writing weights. Add `--no-val` to skip validation or `--no-plots` to avoid saving charts. Run `python -m src.train -h` for the full list of options.
 
-By default training writes `results/training_history.json` and saves both linear and log-scale loss plots (`loss_curves.png`, `loss_curves_log.png`) under `figures/training_curves/`. Supply `--log-path`, `--plot-path`, or `--lambda-reg` to customise outputs.
+By default training writes `results/training_history.json` and saves interactive Plotly dashboards (`loss_curves.html`, `loss_curves_log.html`) under `figures/training_curves/`. Supply `--log-path`, `--plot-path`, or `--lambda-reg` to customise outputs (the script automatically converts non-HTML paths to `.html`).
 
 ### Key training features
 
@@ -201,7 +203,7 @@ By default training writes `results/training_history.json` and saves both linear
        --grid-points 150
    ```
 
-   This loads `results/pinn_checkpoint.pt`, samples a grid over $S \in [20, 200]$ and $σ \in [0.05, 0.6]$, normalises the inputs, and emits both contour and 3D surface plots (look for `*_contour.png` and `*_3d.png` in `figures/final_results/`).
+   This loads `results/pinn_checkpoint.pt`, samples a grid over $S \in [20, 200]$ and $\sigma \in [0.05, 0.6]$, normalises the inputs, and writes an interactive Plotly surface (`pinn_surface.html`) to `figures/final_results/`.
 
 3. **Out-of-sample evaluation**
 
@@ -217,7 +219,7 @@ By default training writes `results/training_history.json` and saves both linear
        --surface-grid 40
    ```
 
-   The testing script compares the PINN against Black–Scholes analytics, finite differences, and Monte Carlo on a held-out set, printing MAE/RMSE diagnostics while saving both a JSON report and summary plots (default `results/figures/oos/`) including 2D overlays and 3D surfaces for price, Δ, and Γ (analytic vs. PINN plus error). Adjust Monte Carlo paths, subsample size, or seeds to probe robustness.
+   The testing script compares the PINN against Black–Scholes analytics, finite differences, and Monte Carlo on a held-out set, printing MAE/RMSE diagnostics while saving both a JSON report and Plotly dashboards (default `results/figures/oos/`) such as `oos_summary.html`, `price_error_vs_S.html`, and analytic/PINN/error surfaces for each price/Greek component. Adjust Monte Carlo paths, subsample size, or seeds to probe robustness.
 
 4. **Validation metrics**
    The `System_Stress_Test.ipynb` notebook:
@@ -232,11 +234,12 @@ By default training writes `results/training_history.json` and saves both linear
 
 ## 8. Notebooks
 
-- **Sanity_Check.ipynb** — lightweight smoke test to ensure imports, dataset generation, baselines, and a mini PINN run all work in your environment.
-- **System_Stress_Test.ipynb** — a regression harness with a CONFIG cell controlling device, warmup, adaptive sampling, batch size, checkpoint behaviour, and evaluation sample counts.
-- **End_to_End_Evaluation.ipynb** — fully scripted pipeline that generates data, trains the PINN, evaluates on validation data, and benchmarks out-of-sample performance with visualizations.
+- **Sanity_Check.ipynb** — lightweight smoke test covering imports, dataset generation, baseline checks, and a short warmup run.
+- **System_Stress_Test.ipynb** — configurable regression harness with knobs for device, warmup, adaptive sampling, and evaluation sample counts; exports summaries to `results/stress_test_summary.json`.
+- **End_to_End_Evaluation.ipynb** — scripted experiment that rebuilds data, trains the PINN, runs the CLI evaluators, and archives artefacts under `results/` & `figures/`.
+- **full_run_evaluation.ipynb** — reproduces the proposal-ready experiment bundle, driving `src.train`/`src.test` with the final hyperparameters and staging outputs in `results/proposal_full_run/`.
 
-Both notebooks keep outputs inside the repo’s `figures/` and `results/` directories so they can be versioned or cleaned easily.
+All notebooks save intermediate artefacts to the tracked `figures/` and `results/` directories for easy inspection or cleanup.
 
 ---
 
@@ -249,6 +252,7 @@ Track progress in `project_board.md`. Completed milestones include:
 - ✅ Baselines (finite difference / Monte Carlo) with reproducible seeds
 - ✅ Adaptive sampling prototype and logging infrastructure
 - ✅ Stress-test notebook covering the entire pipeline
+- ✅ Proposal full-run notebook capturing training + OOS artefacts
 
 Upcoming focus areas:
 

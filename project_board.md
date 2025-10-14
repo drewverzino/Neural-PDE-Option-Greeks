@@ -66,12 +66,13 @@ This project integrates the **Black-Scholes PDE** into a neural network’s loss
 - [x] ✅ **Checkpoint 2:** Model runs 1 epoch cleanly **Owner:** Team
 
 ### Week 3 (Oct 28 – Nov 3): Training + Milestone Report
-- [ ] **Base Training (50 epochs)** – Log loss curves (L_price, L_PDE) **Owner:** 
+- [x] **Base Training (50 epochs)** – Log loss curves (L_price, L_PDE) **Owner:** Team
+- [x] **Full run evaluation notebook** – Capture proposal-ready training + OOS artefacts **Owner:** Team
 - [x] **Diagnostics + Visuals** – PDE residual heatmap, Δ/Γ surfaces **Owner:** Team
 - [x] **Adaptive Sampling Prototype** – Top 10 k error resampling **Owner:** Team
 - [x] **RMSE Comparison (OOS CLI)** – Automate PINN vs FD & MC baselines **Owner:** Team
-- [ ] **Write Milestone Report** – Intro, Methods, Prelim Results, Next Steps **Owner:** 
-- [ ] ✅ **Submit Milestone Report → Nov 3** **Owner:** 
+- [ ] **Write Milestone Report** – Intro, Methods, Prelim Results, Next Steps **Owner:** Team
+- [ ] ✅ **Submit Milestone Report → Nov 3** **Owner:** Team
 
 ---
 
@@ -80,25 +81,25 @@ This project integrates the **Black-Scholes PDE** into a neural network’s loss
 **Goal:** Achieve quantitative + qualitative results for final paper.
 
 ### Week 4 (Nov 4 – Nov 10): Refinement + Hyperparameter Tuning
-- [ ] Sweep λ ∈ {0.001, 0.01, 0.1} **Owner:** 
-- [ ] Tune batch size and learning rate schedule **Owner:** 
-- [ ] Validate training stability (3 seeds) **Owner:** 
-- [ ] Profile runtime and GPU memory **Owner:** 
-- [ ] ✅ Stable training configuration locked in **Owner:** 
+- [ ] Sweep λ ∈ {0.001, 0.01, 0.1} **Owner:** Team
+- [ ] Tune batch size and learning rate schedule **Owner:** Team
+- [ ] Validate training stability (3 seeds) **Owner:** Team
+- [ ] Profile runtime and GPU memory **Owner:** Team
+- [ ] ✅ Stable training configuration locked in **Owner:** Team
 
 ### Week 5 (Nov 11 – Nov 17): Quantitative Evaluation
-- [ ] Compute RMSE for V, Δ, Γ, Θ, ν vs analytic BS **Owner:** 
-- [ ] Evaluate smoothness (Total Variation of Γ) **Owner:** 
-- [ ] Benchmark runtime (< 1 ms target) **Owner:** 
-- [ ] Ablation study (3 / 5 / 7 layers) **Owner:** 
-- [ ] ✅ Results tables + ablation plots finalized **Owner:** 
+- [ ] Compute RMSE for V, Δ, Γ, Θ, ν vs analytic BS **Owner:** Team
+- [ ] Evaluate smoothness (Total Variation of Γ) **Owner:** Team
+- [ ] Benchmark runtime (< 1 ms target) **Owner:** Team
+- [ ] Ablation study (3 / 5 / 7 layers) **Owner:** Team
+- [ ] ✅ Results tables + ablation plots finalized **Owner:** Team
 
 ### Week 6 (Nov 18 – Nov 24): Visualization + Interpretability
-- [ ] Δ, Γ, ν surfaces vs S, σ for multiple τ **Owner:** 
-- [ ] PDE residual heatmaps + failure regions **Owner:** 
-- [ ] Smoothness progression plots **Owner:** 
-- [ ] Export all figures → `figures/final/` **Owner:** 
-- [ ] ✅ **Checkpoint 3:** All experiments and plots ready **Owner:** 
+- [ ] Δ, Γ, ν surfaces vs S, σ for multiple τ **Owner:** Team
+- [ ] PDE residual heatmaps + failure regions **Owner:** Team
+- [ ] Smoothness progression plots **Owner:** Team
+- [ ] Export all figures → `figures/final/` **Owner:** Team
+- [ ] ✅ **Checkpoint 3:** All experiments and plots ready **Owner:** Team
 
 ---
 
@@ -107,17 +108,17 @@ This project integrates the **Black-Scholes PDE** into a neural network’s loss
 **Goal:** Produce final paper and presentation materials.
 
 ### Week 7 (Nov 25 – Nov 30): Final Report
-- [ ] Write Discussion + Conclusion (interpret results, limitations) **Owner:** 
-- [ ] Integrate figures + tables with captions **Owner:** 
-- [ ] Verify citations and BibTeX entries **Owner:** 
-- [ ] Proofread and compile 8-page CVPR PDF **Owner:** 
-- [ ] ✅ **Final Report Due → Nov 30** **Owner:** 
+- [ ] Write Discussion + Conclusion (interpret results, limitations) **Owner:** Team
+- [ ] Integrate figures + tables with captions **Owner:** Team
+- [ ] Verify citations and BibTeX entries **Owner:** Team
+- [ ] Proofread and compile 8-page CVPR PDF **Owner:** Team
+- [ ] ✅ **Final Report Due → Nov 30** **Owner:** Team
 
 ### Week 8 (Dec 1): Poster Session
-- [ ] Design poster layout (abstract, model, results, figures) **Owner:** 
-- [ ] Prepare 2–3 min presentation script **Owner:** 
-- [ ] Print poster and check layout clarity **Owner:** 
-- [ ] ✅ **Poster Session → Dec 1 (Klaus Atrium)** **Owner:** 
+- [ ] Design poster layout (abstract, model, results, figures) **Owner:** Team
+- [ ] Prepare 2–3 min presentation script **Owner:** Team
+- [ ] Print poster and check layout clarity **Owner:** Team
+- [ ] ✅ **Poster Session → Dec 1 (Klaus Atrium)** **Owner:** Team
 
 ---
 
@@ -148,15 +149,14 @@ This project integrates the **Black-Scholes PDE** into a neural network’s loss
 
 | 🧩 To Do | ⚙️ In Progress | 📊 Done |
 |:--|:--|:--|
-| Milestone report | Base training (50 epochs) | Repo setup |
-| Hyperparameter sweeps | RMSE benchmarking | Black-Scholes utilities |
-| Poster design |  | Baselines & loss implementations |
-|  |  | Visualization diagnostics |
-|  |  | Preprocessing & adaptive sampling |
+| Milestone report draft | Expanded RMSE benchmarking | Repo setup |
+| Poster design | Hyperparameter sweep plan | Black-Scholes utilities |
+| Runtime benchmarking |  | Baselines & loss implementations |
+| Final report outline |  | Preprocessing & adaptive sampling |
 |  |  | Stress-test notebook |
-|  |  | OOS evaluation visuals + surfaces (2D/3D) |
+|  |  | Full run evaluation notebook |
+|  |  | OOS evaluation CLI & dashboards |
 |  |  | End-to-end evaluation notebook |
-|  |  | OOS evaluation CLI |
 |  |  | Training curves & logs |
 
 ---
