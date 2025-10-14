@@ -174,14 +174,16 @@ By default training writes `results/training_history.json` and saves both linear
 1. **Monte Carlo / finite-difference baselines**
 
    ```python
-   from src.baselines import finite_diff_greeks, mc_pathwise_delta
+   from src.baselines import finite_diff_greeks, mc_pathwise_greeks
 
    S = 100.0
-   delta_fd, gamma_fd = finite_diff_greeks(S)
-   delta_mc = mc_pathwise_delta(S, seed=0, N=50_000)
+   fd = finite_diff_greeks(S)
+   mc = mc_pathwise_greeks(S, seed=0, N=50_000)
+   print(fd["delta"], fd["gamma"], fd["theta"], fd["vega"], fd["rho"])
+   print(mc["delta"], mc["theta"], mc["vega"], mc["rho"])
    ```
 
-   The Monte Carlo helper accepts either `seed` or a NumPy generator for reproducibility.
+    The Monte Carlo helper accepts either `seed` or a NumPy generator for reproducibility.
 
 2. **Price surface visualisation**
 
@@ -253,4 +255,3 @@ Upcoming focus areas:
 - Full RMSE / runtime benchmarking
 - Hyperparameter sweeps (Sobolev λ, depth, warmup schedules)
 - Milestone report drafting and figure polishing
-```

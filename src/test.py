@@ -13,7 +13,7 @@ import torch
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from . import DATA_DIR, RESULTS_DIR
-from .baselines import finite_diff_greeks, mc_pathwise_delta
+from .baselines import finite_diff_greeks, mc_pathwise_greeks
 from .models import PINNModel
 from .preprocessing import normalize_inputs
 from .utils.black_scholes import bs_greeks
@@ -46,7 +46,8 @@ def evaluate_oos(
         idx = rng.choice(len(data), size=sample_size, replace=False)
         data = data[idx]
     elif sample_size is not None and sample_size > len(data):
-        print(f"[warn] sample_size={sample_size} exceeds dataset size {len(data)}; using full dataset.")
+        print(
+            f"[warn] sample_size={sample_size} exceeds dataset size {len(data)}; using full dataset.")
 
     S_np, t_np, sigma_np, price_np = data.T
     K, T, r = 100.0, 2.0, 0.05
@@ -56,42 +57,95 @@ def evaluate_oos(
     model.load_state_dict(torch.load(model_path, map_location=device))
     model.eval()
 
-    S = torch.tensor(S_np, dtype=torch.float32, device=device, requires_grad=True)
-    t = torch.tensor(t_np, dtype=torch.float32, device=device, requires_grad=True)
-    sigma = torch.tensor(sigma_np, dtype=torch.float32, device=device)
+    S = torch.tensor(S_np, dtype=torch.float32,
+                     device=device, requires_grad=True)
+    t = torch.tensor(t_np, dtype=torch.float32,
+                     device=device, requires_grad=True)
+    sigma = torch.tensor(sigma_np, dtype=torch.float32,
+                         device=device, requires_grad=True)
 
     features = normalize_inputs(S, t, sigma)
     pred_price = model(features).squeeze()
 
     ones = torch.ones_like(pred_price)
-    delta_pred = torch.autograd.grad(pred_price, S, grad_outputs=ones, create_graph=True)[0]
-    gamma_pred = torch.autograd.grad(delta_pred, S, grad_outputs=torch.ones_like(delta_pred), create_graph=False)[0]
+
+    # Compute delta with create_graph=True (needed for gamma)
+    delta_pred = torch.autograd.grad(
+        pred_price, S, grad_outputs=ones, create_graph=True, retain_graph=True
+    )[0]
+
+    # Compute gamma next (second-order derivative)
+    gamma_pred = torch.autograd.grad(
+        delta_pred, S, grad_outputs=torch.ones_like(delta_pred), create_graph=False, retain_graph=True
+    )[0]
+
+    # Now compute the remaining first-order derivatives
+    theta_pred = torch.autograd.grad(
+        pred_price, t, grad_outputs=ones, create_graph=False, retain_graph=True
+    )[0]
+
+    vega_pred = torch.autograd.grad(
+        pred_price, sigma, grad_outputs=ones, create_graph=False, retain_graph=True
+    )[0]
 
     pred_price_np = pred_price.detach().cpu().numpy()
     delta_pred_np = delta_pred.detach().cpu().numpy()
     gamma_pred_np = gamma_pred.detach().cpu().numpy()
+    theta_pred_np = theta_pred.detach().cpu().numpy()
+    vega_pred_np = vega_pred.detach().cpu().numpy()
 
     analytic = bs_greeks(S_np, K, T, t_np, sigma_np, r)
     delta_true = analytic["delta"]
     gamma_true = analytic["gamma"]
+    theta_true = analytic["theta"]
+    vega_true = analytic["vega"]
+    rho_true = analytic["rho"]
     price_true = price_np
 
-    delta_fd, gamma_fd = finite_diff_greeks(S_np, K=K, T=T, t=t_np, sigma=sigma_np, r=r)
+    fd_greeks = finite_diff_greeks(S_np, K=K, T=T, t=t_np, sigma=sigma_np, r=r)
+    delta_fd = fd_greeks["delta"]
+    gamma_fd = fd_greeks["gamma"]
+    theta_fd = fd_greeks["theta"]
+    vega_fd = fd_greeks["vega"]
+    rho_fd = fd_greeks["rho"]
 
-    mc_delta = np.array(
-        [
-            mc_pathwise_delta(s, K=K, T=tn, r=r, sigma=vol, N=mc_paths, seed=seed + i)
-            for i, (s, tn, vol) in enumerate(zip(S_np, t_np, sigma_np))
-        ]
-    )
+    mc_delta: list[float] = []
+    mc_theta: list[float] = []
+    mc_vega: list[float] = []
+    mc_rho: list[float] = []
+    for i, (s, tn, vol) in enumerate(zip(S_np, t_np, sigma_np)):
+        mc_estimates = mc_pathwise_greeks(
+            s, K=K, T=tn, r=r, sigma=vol, N=mc_paths, seed=seed + i)
+        mc_delta.append(mc_estimates["delta"])
+        mc_theta.append(mc_estimates["theta"])
+        mc_vega.append(mc_estimates["vega"])
+        mc_rho.append(mc_estimates["rho"])
+
+    mc_delta = np.asarray(mc_delta)
+    mc_theta = np.asarray(mc_theta)
+    mc_vega = np.asarray(mc_vega)
+    mc_rho = np.asarray(mc_rho)
+
+    tau_np = T - t_np
+    # ρ = τ (S Δ - V) for European calls
+    rho_pred_np = tau_np * (S_np * delta_pred_np - pred_price_np)
 
     metrics = {
         "pinn_price_rmse": rmse(pred_price_np, price_true),
         "pinn_delta_mae": mae(delta_pred_np, delta_true),
         "pinn_gamma_mae": mae(gamma_pred_np, gamma_true),
+        "pinn_theta_mae": mae(theta_pred_np, theta_true),
+        "pinn_vega_mae": mae(vega_pred_np, vega_true),
+        "pinn_rho_mae": mae(rho_pred_np, rho_true),
         "fd_delta_mae": mae(delta_fd, delta_true),
         "fd_gamma_mae": mae(gamma_fd, gamma_true),
+        "fd_theta_mae": mae(theta_fd, theta_true),
+        "fd_vega_mae": mae(vega_fd, vega_true),
+        "fd_rho_mae": mae(rho_fd, rho_true),
         "mc_delta_mae": mae(mc_delta, delta_true),
+        "mc_theta_mae": mae(mc_theta, theta_true),
+        "mc_vega_mae": mae(mc_vega, vega_true),
+        "mc_rho_mae": mae(mc_rho, rho_true),
     }
 
     if fig_dir is not None:
@@ -103,11 +157,23 @@ def evaluate_oos(
             price_true,
             delta_pred_np,
             gamma_pred_np,
+            theta_pred_np,
+            vega_pred_np,
+            rho_pred_np,
             delta_fd,
             gamma_fd,
+            theta_fd,
+            vega_fd,
+            rho_fd,
             mc_delta,
+            mc_theta,
+            mc_vega,
+            mc_rho,
             delta_true,
             gamma_true,
+            theta_true,
+            vega_true,
+            rho_true,
             surface_grid=surface_grid,
         )
 
@@ -122,11 +188,23 @@ def _visualize_results(
     price_true: np.ndarray,
     delta_pinn: np.ndarray,
     gamma_pinn: np.ndarray,
+    theta_pinn: np.ndarray,
+    vega_pinn: np.ndarray,
+    rho_pinn: np.ndarray,
     delta_fd: np.ndarray,
     gamma_fd: np.ndarray,
+    theta_fd: np.ndarray,
+    vega_fd: np.ndarray,
+    rho_fd: np.ndarray,
     delta_mc: np.ndarray,
+    theta_mc: np.ndarray,
+    vega_mc: np.ndarray,
+    rho_mc: np.ndarray,
     delta_true: np.ndarray,
     gamma_true: np.ndarray,
+    theta_true: np.ndarray,
+    vega_true: np.ndarray,
+    rho_true: np.ndarray,
     *,
     surface_grid: int | None = None,
 ) -> None:
@@ -134,7 +212,8 @@ def _visualize_results(
     fig_dir.mkdir(parents=True, exist_ok=True)
 
     plot_count = min(len(S), 5000)
-    idx = np.linspace(0, len(S) - 1, plot_count, dtype=int) if len(S) > plot_count else np.arange(len(S))
+    idx = np.linspace(0, len(S) - 1, plot_count,
+                      dtype=int) if len(S) > plot_count else np.arange(len(S))
 
     diag_price = np.linspace(price_true.min(), price_true.max(), 100)
     diag_delta = np.linspace(delta_true.min(), delta_true.max(), 100)
@@ -151,30 +230,42 @@ def _visualize_results(
         ),
     )
     summary_fig.add_trace(
-        go.Scatter(x=price_true[idx], y=price_pred[idx], mode="markers", name="PINN"),
+        go.Scatter(x=price_true[idx], y=price_pred[idx],
+                   mode="markers", name="PINN"),
         row=1,
         col=1,
     )
     summary_fig.add_trace(
-        go.Scatter(x=diag_price, y=diag_price, mode="lines", name="diag", line=dict(dash="dash")),
+        go.Scatter(x=diag_price, y=diag_price, mode="lines",
+                   name="diag", line=dict(dash="dash")),
         row=1,
         col=1,
     )
 
-    summary_fig.add_trace(go.Scatter(x=delta_true[idx], y=delta_pinn[idx], mode="markers", name="PINN"), 1, 2)
-    summary_fig.add_trace(go.Scatter(x=delta_true[idx], y=delta_fd[idx], mode="markers", name="Finite diff"), 1, 2)
-    summary_fig.add_trace(go.Scatter(x=delta_true[idx], y=delta_mc[idx], mode="markers", name="Monte Carlo"), 1, 2)
-    summary_fig.add_trace(go.Scatter(x=diag_delta, y=diag_delta, mode="lines", name="diag", line=dict(dash="dash")), 1, 2)
+    summary_fig.add_trace(go.Scatter(
+        x=delta_true[idx], y=delta_pinn[idx], mode="markers", name="PINN"), 1, 2)
+    summary_fig.add_trace(go.Scatter(
+        x=delta_true[idx], y=delta_fd[idx], mode="markers", name="Finite diff"), 1, 2)
+    summary_fig.add_trace(go.Scatter(
+        x=delta_true[idx], y=delta_mc[idx], mode="markers", name="Monte Carlo"), 1, 2)
+    summary_fig.add_trace(go.Scatter(x=diag_delta, y=diag_delta,
+                          mode="lines", name="diag", line=dict(dash="dash")), 1, 2)
 
-    summary_fig.add_trace(go.Histogram(x=delta_pinn - delta_true, name="PINN", opacity=0.6), 2, 1)
-    summary_fig.add_trace(go.Histogram(x=delta_fd - delta_true, name="Finite diff", opacity=0.6), 2, 1)
-    summary_fig.add_trace(go.Histogram(x=delta_mc - delta_true, name="Monte Carlo", opacity=0.6), 2, 1)
+    summary_fig.add_trace(go.Histogram(
+        x=delta_pinn - delta_true, name="PINN", opacity=0.6), 2, 1)
+    summary_fig.add_trace(go.Histogram(
+        x=delta_fd - delta_true, name="Finite diff", opacity=0.6), 2, 1)
+    summary_fig.add_trace(go.Histogram(
+        x=delta_mc - delta_true, name="Monte Carlo", opacity=0.6), 2, 1)
     summary_fig.update_yaxes(title_text="Count", row=2, col=1)
     summary_fig.update_xaxes(title_text="Δ prediction error", row=2, col=1)
 
-    summary_fig.add_trace(go.Scatter(x=gamma_true[idx], y=gamma_pinn[idx], mode="markers", name="PINN"), 2, 2)
-    summary_fig.add_trace(go.Scatter(x=gamma_true[idx], y=gamma_fd[idx], mode="markers", name="Finite diff"), 2, 2)
-    summary_fig.add_trace(go.Scatter(x=diag_gamma, y=diag_gamma, mode="lines", name="diag", line=dict(dash="dash")), 2, 2)
+    summary_fig.add_trace(go.Scatter(
+        x=gamma_true[idx], y=gamma_pinn[idx], mode="markers", name="PINN"), 2, 2)
+    summary_fig.add_trace(go.Scatter(
+        x=gamma_true[idx], y=gamma_fd[idx], mode="markers", name="Finite diff"), 2, 2)
+    summary_fig.add_trace(go.Scatter(x=diag_gamma, y=diag_gamma,
+                          mode="lines", name="diag", line=dict(dash="dash")), 2, 2)
 
     summary_fig.update_xaxes(title_text="Analytic price", row=1, col=1)
     summary_fig.update_yaxes(title_text="PINN price", row=1, col=1)
@@ -186,7 +277,8 @@ def _visualize_results(
     summary_fig.write_html(fig_dir / "oos_summary.html")
 
     error_fig = go.Figure()
-    error_fig.add_trace(go.Scatter(x=S[idx], y=price_true[idx] - price_pred[idx], mode="markers", name="Price error"))
+    error_fig.add_trace(go.Scatter(
+        x=S[idx], y=price_true[idx] - price_pred[idx], mode="markers", name="Price error"))
     error_fig.update_layout(
         title="Price error vs stock price",
         xaxis_title="Stock price S",
@@ -200,8 +292,12 @@ def _visualize_results(
             ("price", price_true, price_pred),
             ("delta", delta_true, delta_pinn),
             ("gamma", gamma_true, gamma_pinn),
+            ("theta", theta_true, theta_pinn),
+            ("vega", vega_true, vega_pinn),
+            ("rho", rho_true, rho_pinn),
         ]
         _plot_component_surfaces(fig_dir, S, sigma, components, surface_grid)
+
 
 def _plot_component_surfaces(
     fig_dir: Path,
@@ -210,7 +306,7 @@ def _plot_component_surfaces(
     components: list[tuple[str, np.ndarray, np.ndarray]],
     grid: int,
 ) -> None:
-    """Render 3D surfaces for analytic vs. PINN components (price/delta/gamma)."""
+    """Render 3D surfaces for analytic vs. PINN components (price and Greeks)."""
 
     grid = int(grid)
     fig_dir = Path(fig_dir)
@@ -245,7 +341,8 @@ def _plot_component_surfaces(
         nan_mask = np.isnan(filled)
         if np.any(~nan_mask):
             filled[nan_mask] = np.nanmean(filled[~nan_mask])
-        fig = go.Figure(data=[go.Surface(x=S_grid, y=Sigma_grid, z=filled, colorscale="Viridis")])
+        fig = go.Figure(
+            data=[go.Surface(x=S_grid, y=Sigma_grid, z=filled, colorscale="Viridis")])
         fig.update_layout(
             title=title,
             scene=dict(
@@ -261,12 +358,17 @@ def _plot_component_surfaces(
         pred_surface = grid_average(pred_vals)
         error_surface = grid_average(pred_vals - true_vals)
         capital = name.capitalize()
-        save_surface(true_surface, f"Analytic {capital} surface", f"analytic_{name}_surface.html", capital)
-        save_surface(pred_surface, f"PINN {capital} surface", f"pinn_{name}_surface.html", capital)
-        save_surface(error_surface, f"{capital} error surface (PINN - analytic)", f"{name}_error_surface.html", capital)
+        save_surface(
+            true_surface, f"Analytic {capital} surface", f"analytic_{name}_surface.html", capital)
+        save_surface(
+            pred_surface, f"PINN {capital} surface", f"pinn_{name}_surface.html", capital)
+        save_surface(
+            error_surface, f"{capital} error surface (PINN - analytic)", f"{name}_error_surface.html", capital)
+
 
 def _build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Out-of-sample evaluation script.")
+    parser = argparse.ArgumentParser(
+        description="Out-of-sample evaluation script.")
     parser.add_argument(
         "--data-path",
         type=Path,
@@ -279,10 +381,14 @@ def _build_parser() -> argparse.ArgumentParser:
         default=RESULTS_DIR / "pinn_checkpoint.pt",
         help="Trained PINN checkpoint.",
     )
-    parser.add_argument("--device", default="cpu", help='Evaluation device ("cpu" or "cuda").')
-    parser.add_argument("--sample-size", type=int, default=None, help="Optional subsample size.")
-    parser.add_argument("--mc-paths", type=int, default=50_000, help="Monte Carlo paths per evaluation.")
-    parser.add_argument("--seed", type=int, default=0, help="Random seed for sampling.")
+    parser.add_argument("--device", default="cpu",
+                        help='Evaluation device ("cpu" or "cuda").')
+    parser.add_argument("--sample-size", type=int,
+                        default=None, help="Optional subsample size.")
+    parser.add_argument("--mc-paths", type=int, default=50_000,
+                        help="Monte Carlo paths per evaluation.")
+    parser.add_argument("--seed", type=int, default=0,
+                        help="Random seed for sampling.")
     parser.add_argument(
         "--output",
         type=Path,

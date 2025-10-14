@@ -3,10 +3,10 @@
 import numpy as np
 
 
-def mc_pathwise_delta(
+def mc_pathwise_greeks(
     S0,
     K=100,
-    T=1,
+    T=1.0,
     r=0.05,
     sigma=0.2,
     N=10_000,
@@ -14,33 +14,53 @@ def mc_pathwise_delta(
     seed=None,
     rng=None,
 ):
-    """Estimate the call delta with the pathwise derivative estimator.
+    """Estimate call-option Greeks with pathwise derivatives under Black–Scholes.
 
-    Parameters
-    ----------
-    S0 : float
-        Initial asset price.
-    K : float
-        Strike price.
-    T : float
-        Time horizon (years).
-    r : float
-        Risk-free rate.
-    sigma : float
-        Volatility of the underlying asset.
-    N : int
-        Number of Monte Carlo samples.
-    seed : int, optional
-        Seed forwarded to NumPy's default RNG (ignored if rng is provided).
-    rng : numpy.random.Generator, optional
-        Custom random generator for reproducibility and batched sampling.
+    Returns a dictionary with delta, theta, vega, and rho estimates (gamma is
+    omitted due to instability in second-order pathwise estimators).
     """
     if rng is not None and seed is not None:
         raise ValueError("Provide either `rng` or `seed`, not both.")
     if rng is None:
         rng = np.random.default_rng(seed)
+
+    sqrt_T = np.sqrt(T)
     Z = rng.standard_normal(N)
-    ST = S0 * np.exp((r - 0.5 * sigma**2) * T + sigma * np.sqrt(T) * Z)
-    dS = ST / S0
-    delta = np.exp(-r * T) * np.mean(dS * (ST > K))
-    return float(delta)
+    ST = S0 * np.exp((r - 0.5 * sigma**2) * T + sigma * sqrt_T * Z)
+    payoff = np.maximum(ST - K, 0.0)
+    indicator = (ST > K).astype(float)
+    discount = np.exp(-r * T)
+
+    delta = discount * np.mean(indicator * ST / S0)
+
+    # Guard against T≈0 when computing theta
+    theta_factor = r - 0.5 * sigma**2
+    sqrt_term = np.where(sqrt_T > 0.0, 0.5 * sigma * Z / sqrt_T, 0.0)
+    theta_tau = discount * np.mean(-r * payoff + indicator * ST * (theta_factor + sqrt_term))
+    theta = -theta_tau
+
+    vega = discount * np.mean(indicator * ST * (sqrt_T * Z - sigma * T))
+
+    rho = discount * np.mean(T * (indicator * ST - payoff))
+
+    return {
+        "delta": float(delta),
+        "theta": float(theta),
+        "vega": float(vega),
+        "rho": float(rho),
+    }
+
+
+def mc_pathwise_delta(
+    S0,
+    K=100,
+    T=1.0,
+    r=0.05,
+    sigma=0.2,
+    N=10_000,
+    *,
+    seed=None,
+    rng=None,
+):
+    """Backward-compatible wrapper returning only the pathwise delta estimate."""
+    return mc_pathwise_greeks(S0, K=K, T=T, r=r, sigma=sigma, N=N, seed=seed, rng=rng)["delta"]
