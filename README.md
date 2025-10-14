@@ -64,7 +64,7 @@ $$
 
 with terminal payoff $V(T,S,\sigma) = \max(S - K, 0)$. In our PINN:
 
-- **Input features:** $(S, t, \sigma)$ transformed into log-moneyness $x = \log(S/K)$, time-to-maturity $ \tau = T - t $, and scaled to $[-1,1]$.
+- **Input features:** $(S, t, \sigma)$ transformed into log-moneyness $x = \log(S/K)$, time-to-maturity $\tau = T - t$, and scaled to $[-1,1]$.
 - **Network:** Residual MLP (default 5×128) mapping features → scalar price $V_\theta$.
 - **Loss terms:**
   - $L_{\text{price}} = \mathbb{E}[(V_\theta - V_{BS})^2]$,
@@ -95,7 +95,7 @@ with terminal payoff $V(T,S,\sigma) = \max(S - K, 0)$. In our PINN:
 - Synthetic datasets are created from the analytic Black–Scholes formula with:
   - $S \sim \text{Uniform}(20, 200)$,
   - $t \sim \text{Uniform}(0.01, 2.0)$,
-  - $ \sigma \sim \text{Uniform}(0.05, 0.6)$.
+  - $\sigma \sim \text{Uniform}(0.05, 0.6)$.
 - We save `[S, t, σ, V]` tuples as `.npy` arrays in `data/`.
 - Preprocessing (implemented in `src.preprocessing.normalize_inputs`) converts raw inputs to log-moneyness and scaled time/volatility before they reach the network.
 
@@ -183,7 +183,7 @@ By default training writes `results/training_history.json` and saves both linear
    print(mc["delta"], mc["theta"], mc["vega"], mc["rho"])
    ```
 
-    The Monte Carlo helper accepts either `seed` or a NumPy generator for reproducibility.
+   The Monte Carlo helper accepts either `seed` or a NumPy generator for reproducibility.
 
 2. **Price surface visualisation**
 
