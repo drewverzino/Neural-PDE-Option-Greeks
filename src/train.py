@@ -176,7 +176,7 @@ def _configure_device(device: str | torch.device) -> torch.device:
 
 def train(
     epochs: int = 50,
-    lr: float = 1e-3,
+    lr: float = 5e-4,
     checkpoint_path: Path | str = RESULTS_DIR / "pinn_checkpoint.pt",
     *,
     batch_size: int = 4096,
@@ -184,13 +184,14 @@ def train(
     val_path: Path | str | None = DATA_DIR / "synthetic_val.npy",
     device: str | torch.device = "cpu",
     adaptive_sampling: bool = False,
-    adaptive_every: int = 10,
+    adaptive_every: int = 5,
     adaptive_points: int = 10_000,
     adaptive_radius: float = 0.1,
     adaptive_eval_samples: int = 50_000,
     use_warmup: bool = True,
     warmup_steps: int = 500,
-    grad_clip: float | None = None,
+    warmup_base_lr: float = 1e-5,
+    grad_clip: float | None = 1.0,
     load_checkpoint: bool = False,
     save_checkpoint: bool = True,
     plot_losses: bool = True,
@@ -212,8 +213,13 @@ def train(
         print(f"Loaded checkpoint from {checkpoint_path}")
         return model, []
 
-    opt = torch.optim.Adam(model.parameters(), lr=lr)
-    base_lr = lr
+    if use_warmup and warmup_steps > 0:
+        init_lr = min(warmup_base_lr, lr)
+    else:
+        init_lr = lr
+    opt = torch.optim.Adam(model.parameters(), lr=init_lr)
+    target_lr = lr
+    base_warmup_lr = min(warmup_base_lr, target_lr)
     global_step = 0
 
     use_cuda = device.type == "cuda"
@@ -262,9 +268,10 @@ def train(
             )
 
             if use_warmup and warmup_steps > 0:
-                lr_scale = min(1.0, (global_step + 1) / warmup_steps)
+                progress = min(1.0, (global_step + 1) / warmup_steps)
+                current_lr = base_warmup_lr + (target_lr - base_warmup_lr) * progress
                 for group in opt.param_groups:
-                    group["lr"] = base_lr * lr_scale
+                    group["lr"] = current_lr
 
             loss.backward()
             if grad_clip and grad_clip > 0:
@@ -480,7 +487,12 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--epochs", type=int, default=50, help="Number of training epochs."
     )
-    parser.add_argument("--lr", type=float, default=1e-3, help="Initial learning rate.")
+    parser.add_argument(
+        "--lr",
+        type=float,
+        default=5e-4,
+        help="Target learning rate after warmup.",
+    )
     parser.add_argument("--batch-size", type=int, default=4096, help="Mini-batch size.")
     parser.add_argument(
         "--data-path",
@@ -525,10 +537,16 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         help="Number of warmup steps if enabled.",
     )
     parser.add_argument(
+        "--warmup-base-lr",
+        type=float,
+        default=1e-5,
+        help="Starting learning rate used at the beginning of warmup.",
+    )
+    parser.add_argument(
         "--grad-clip",
         type=float,
-        default=None,
-        help="Gradient clipping norm (None to disable).",
+        default=1.0,
+        help="Gradient clipping norm (set <=0 to disable).",
     )
 
     parser.add_argument(
@@ -539,7 +557,7 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--adaptive-every",
         type=int,
-        default=10,
+        default=5,
         help="Epoch interval for adaptive sampling.",
     )
     parser.add_argument(
@@ -635,6 +653,7 @@ def main() -> None:
         adaptive_eval_samples=args.adaptive_eval_samples,
         use_warmup=args.use_warmup,
         warmup_steps=args.warmup_steps,
+        warmup_base_lr=args.warmup_base_lr,
         grad_clip=args.grad_clip,
         load_checkpoint=args.load_checkpoint,
         save_checkpoint=args.save_checkpoint,

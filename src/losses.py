@@ -112,23 +112,12 @@ def pinn_loss(
     )
     L_PDE = torch.mean(residual**2)
 
-    # Gamma regularization (smoothness penalty)
+    # Smoothness penalty on delta (Sobolev-style regulariser)
     ones = torch.ones_like(pred)
     delta = torch.autograd.grad(
         pred, S_leaf, grad_outputs=ones, create_graph=True, retain_graph=True
     )[0]
-    gamma = torch.autograd.grad(
-        delta,
-        S_leaf,
-        grad_outputs=torch.ones_like(delta),
-        create_graph=True,
-        retain_graph=True,
-    )[0]
-
-    gamma_var = torch.mean(gamma**2)
-    price_scale = L_price.detach()
-    reg_scale = price_scale / (gamma_var.detach() + 1e-8)
-    L_reg = λ * gamma_var * reg_scale
+    L_reg = λ * torch.mean(delta**2)
 
     # Boundary condition losses
     L_boundary = torch.tensor(0.0, device=pred.device)

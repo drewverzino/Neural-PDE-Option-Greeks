@@ -23,7 +23,8 @@ class PINNModel(nn.Module):
     def __init__(self, input_dim=3, hidden_dim=128, n_layers=5):
         super().__init__()
         self.input = nn.Linear(input_dim, hidden_dim)
-        self.blocks = nn.ModuleList([TanhBlock(hidden_dim) for _ in range(n_layers)])
+        self.blocks = nn.ModuleList(
+            [TanhBlock(hidden_dim) for _ in range(n_layers)])
         self.output = nn.Linear(hidden_dim, 1)
         # good inits for smooth nets
         nn.init.xavier_uniform_(self.input.weight)
