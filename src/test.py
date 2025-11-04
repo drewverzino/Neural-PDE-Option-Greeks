@@ -136,6 +136,7 @@ def evaluate_oos(
     mc_theta: list[float] = []
     mc_vega: list[float] = []
     mc_rho: list[float] = []
+    mc_gamma: list[float] = []
     for i, (s, tn, vol) in enumerate(zip(S_np, t_np, sigma_np)):
         tau = max(1e-6, T - tn)
         mc_estimates = mc_pathwise_greeks(
@@ -145,11 +146,13 @@ def evaluate_oos(
         mc_theta.append(mc_estimates["theta"])
         mc_vega.append(mc_estimates["vega"])
         mc_rho.append(mc_estimates["rho"])
+        mc_gamma.append(mc_estimates["gamma"])
 
     mc_delta = np.asarray(mc_delta)
     mc_theta = np.asarray(mc_theta)
     mc_vega = np.asarray(mc_vega)
     mc_rho = np.asarray(mc_rho)
+    mc_gamma = np.asarray(mc_gamma)
 
     tau_np = np.clip(T - t_np, 1e-6, None)
     # ρ = τ (S Δ - V) for European calls
@@ -168,6 +171,7 @@ def evaluate_oos(
         "fd_vega_mae": mae(vega_fd, vega_true),
         "fd_rho_mae": mae(rho_fd, rho_true),
         "mc_delta_mae": mae(mc_delta, delta_true),
+        "mc_gamma_mae": mae(mc_gamma, gamma_true),
         "mc_theta_mae": mae(mc_theta, theta_true),
         "mc_vega_mae": mae(mc_vega, vega_true),
         "mc_rho_mae": mae(mc_rho, rho_true),
@@ -258,7 +262,8 @@ def _visualize_results(
         ),
     )
     summary_fig.add_trace(
-        go.Scatter(x=price_true[idx], y=price_pred[idx], mode="markers", name="PINN"),
+        go.Scatter(x=price_true[idx], y=price_pred[idx],
+                   mode="markers", name="PINN"),
         row=1,
         col=1,
     )
@@ -275,7 +280,8 @@ def _visualize_results(
     )
 
     summary_fig.add_trace(
-        go.Scatter(x=delta_true[idx], y=delta_pinn[idx], mode="markers", name="PINN"),
+        go.Scatter(x=delta_true[idx], y=delta_pinn[idx],
+                   mode="markers", name="PINN"),
         1,
         2,
     )
@@ -309,16 +315,19 @@ def _visualize_results(
         go.Histogram(x=delta_pinn - delta_true, name="PINN", opacity=0.6), 2, 1
     )
     summary_fig.add_trace(
-        go.Histogram(x=delta_fd - delta_true, name="Finite diff", opacity=0.6), 2, 1
+        go.Histogram(x=delta_fd - delta_true,
+                     name="Finite diff", opacity=0.6), 2, 1
     )
     summary_fig.add_trace(
-        go.Histogram(x=delta_mc - delta_true, name="Monte Carlo", opacity=0.6), 2, 1
+        go.Histogram(x=delta_mc - delta_true,
+                     name="Monte Carlo", opacity=0.6), 2, 1
     )
     summary_fig.update_yaxes(title_text="Count", row=2, col=1)
     summary_fig.update_xaxes(title_text="Δ prediction error", row=2, col=1)
 
     summary_fig.add_trace(
-        go.Scatter(x=gamma_true[idx], y=gamma_pinn[idx], mode="markers", name="PINN"),
+        go.Scatter(x=gamma_true[idx], y=gamma_pinn[idx],
+                   mode="markers", name="PINN"),
         2,
         2,
     )
@@ -422,7 +431,8 @@ def _plot_component_surfaces(
         if np.any(~nan_mask):
             filled[nan_mask] = np.nanmean(filled[~nan_mask])
         fig = go.Figure(
-            data=[go.Surface(x=S_grid, y=Sigma_grid, z=filled, colorscale="Viridis")]
+            data=[go.Surface(x=S_grid, y=Sigma_grid,
+                             z=filled, colorscale="Viridis")]
         )
         fig.update_layout(
             title=title,
@@ -460,7 +470,8 @@ def _plot_component_surfaces(
 
 
 def _build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Out-of-sample evaluation script.")
+    parser = argparse.ArgumentParser(
+        description="Out-of-sample evaluation script.")
     parser.add_argument(
         "--data-path",
         type=Path,
@@ -482,7 +493,8 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--mc-paths", type=int, default=50_000, help="Monte Carlo paths per evaluation."
     )
-    parser.add_argument("--seed", type=int, default=0, help="Random seed for sampling.")
+    parser.add_argument("--seed", type=int, default=0,
+                        help="Random seed for sampling.")
     parser.add_argument(
         "--output",
         type=Path,
