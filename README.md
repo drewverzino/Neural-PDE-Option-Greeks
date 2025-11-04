@@ -42,10 +42,10 @@ Neural-PDE-Option-Greeks/
 │       └── black_scholes.py    # Closed-form Black–Scholes price & Greeks
 │
 ├── notebooks/
-│   ├── Sanity_Check.ipynb          # Lightweight smoke test
-│   ├── System_Stress_Test.ipynb    # Configurable regression harness
-│   ├── End_to_End_Evaluation.ipynb # Full training/validation/testing pipeline
-│   └── full_run_evaluation.ipynb   # Reproducible run used for the proposal package
+│   ├── Sanity_Check.ipynb              # Lightweight smoke test
+│   ├── System_Stress_Test.ipynb        # Configurable regression harness
+│   ├── End_to_End_Evaluation.ipynb     # Full training/validation/testing pipeline
+│   └── milestone_run_evaluation.ipynb  # Reproducible milestone run with scorecard
 │
 ├── data/                       # Generated `.npy` splits + synthetic_meta.json
 ├── results/                    # Checkpoints, metrics JSON, exported Plotly dashboards
@@ -126,7 +126,7 @@ model, history = train(
     epochs=50,
     lr=1e-3,
     batch_size=4096,
-    device="cuda",             # "cpu" or "cuda"
+    device="auto",            # auto-selects cuda → mps → cpu
     use_warmup=True,
     warmup_steps=500,
     grad_clip=1.0,
@@ -147,7 +147,7 @@ python -m src.train \
     --epochs 25 \
     --lr 5e-4 \
     --batch-size 2048 \
-    --device cuda \
+    --device auto \
     --adaptive-sampling \
     --adaptive-every 5 \
     --warmup-steps 300 \
@@ -164,9 +164,9 @@ By default training writes `results/training_history.json` and saves interactive
 - **Warmup scheduling:** When `use_warmup=True`, the learning rate ramps up linearly during the first `warmup_steps` optimiser steps.
 - **Adaptive sampling:** Periodically identifies collocation points with the largest PDE residuals, jitter-resamples their neighbourhoods, and augments the dataset. This stabilises learning in high-curvature regions that drive Γ.
 - **Validation loop:** When a validation set is provided, per-epoch metrics (`val_loss`, `val_pde`, …) are logged alongside training values.
-- **Device selection:** Pass `"cuda"` to leverage a GPU; the helper automatically falls back to CPU if CUDA is unavailable.
+- **Device selection:** Specify `--device auto` (default) to pick CUDA, Metal/MPS, or CPU automatically, or force a device via `--device cuda` / `--device mps` / `--device cpu` as needed.
 - **Logging & plots:** History is stored as JSON and loss curves are rendered automatically (configurable via CLI flags).
-- **Regularization control:** Tune `--lambda-reg` to scale the gradient-squared penalty term.
+- **Regularization control:** Tune `--lambda-reg` to scale the Sobolev-style penalty on $\partial_S V_\theta$ (delta).
 - **Checkpointing:** Controlled via `save_checkpoint` / `load_checkpoint`.
 
 ---
@@ -185,7 +185,7 @@ By default training writes `results/training_history.json` and saves interactive
    print(mc["delta"], mc["theta"], mc["vega"], mc["rho"])
    ```
 
-   The Monte Carlo helper accepts either `seed` or a NumPy generator for reproducibility.
+   The Monte Carlo helper accepts either `seed` or a NumPy generator for reproducibility, and includes a common-random-number gamma estimator to stabilise second derivatives.
 
 2. **Price surface visualisation**
 
@@ -232,18 +232,36 @@ By default training writes `results/training_history.json` and saves interactive
 
 ---
 
-## 8. Notebooks
+## 8. Current Results Snapshot
+
+The **milestone_run_evaluation.ipynb** notebook drives the full 1M / 100k / 100k configuration, logs validation metrics, stress-tests a higher-volatility band ($\sigma \in [0.60, 0.65]$), and renders a scorecard against our success targets. The most recent full run (Nov 2025) produced:
+
+| Metric (validation) | Value | Target |
+| --- | ---: | ---: |
+| Price RMSE | 0.5025 | 0.01 |
+| Δ MAE | 0.0083 | 0.05 |
+| Γ MAE | 0.00053 | 0.10 |
+| Θ MAE | 0.389 | 0.05 |
+| ν MAE | 1.882 | 0.05 |
+| ρ MAE | 1.116 | 0.05 |
+| Γ TV ratio | 0.98 | ≤ 2.0 |
+
+High-volatility stress (σ ∈ [0.60, 0.65]) still shows roughly 2–3× error degradation relative to validation (price ratio 2.69, θ ratio 3.31). Upcoming work now shifts to post-milestone objectives—tightening supervised RMSE, expanding volatility coverage, and experimenting with richer architectures—for the final report. Interactive loss curves, OOD dashboards, and JSON artefacts are embedded inline within the notebook for quick inspection.
+
+---
+
+## 9. Notebooks
 
 - **Sanity_Check.ipynb** — lightweight smoke test covering imports, dataset generation, baseline checks, and a short warmup run.
 - **System_Stress_Test.ipynb** — configurable regression harness with knobs for device, warmup, adaptive sampling, and evaluation sample counts; exports summaries to `results/stress_test_summary.json`.
 - **End_to_End_Evaluation.ipynb** — scripted experiment that rebuilds data, trains the PINN, runs the CLI evaluators, and archives artefacts under `results/` & `figures/`.
-- **full_run_evaluation.ipynb** — reproduces the proposal-ready experiment bundle, driving `src.train`/`src.test` with the final hyperparameters and staging outputs in `results/proposal_full_run/`.
+- **milestone_run_evaluation.ipynb** — reproduces the milestone-scale experiment bundle, driving `src.train`/`src.test`, logging validation + OOD scorecards, and staging outputs in `results/milestone_report_full_run/`.
 
 All notebooks save intermediate artefacts to the tracked `figures/` and `results/` directories for easy inspection or cleanup.
 
 ---
 
-## 9. Project Status & Next Steps
+## 10. Project Status & Next Steps
 
 Track progress in `project_board.md`. Completed milestones include:
 
@@ -252,10 +270,11 @@ Track progress in `project_board.md`. Completed milestones include:
 - ✅ Baselines (finite difference / Monte Carlo) with reproducible seeds
 - ✅ Adaptive sampling prototype and logging infrastructure
 - ✅ Stress-test notebook covering the entire pipeline
-- ✅ Proposal full-run notebook capturing training + OOS artefacts
+- ✅ Milestone evaluation notebook capturing training + validation/OOD scorecards
 
 Upcoming focus areas:
 
-- Full RMSE / runtime benchmarking
-- Hyperparameter sweeps (Sobolev λ, depth, warmup schedules)
-- Milestone report drafting and figure polishing
+- Integrate analytic supervision for θ/ν/ρ and rebalance loss weights to push price RMSE toward the 0.01 target
+- Hyperparameter sweeps (Sobolev λ, widened residual trunk, warmup schedules, weight decay)
+- Extend training volatility coverage and benchmark OOD degradation
+- Draft milestone report narrative and polish figures

@@ -71,8 +71,8 @@ This project integrates the **Black-Scholes PDE** into a neural network’s loss
 - [x] **Diagnostics + Visuals** – PDE residual heatmap, Δ/Γ surfaces **Owner:** Team
 - [x] **Adaptive Sampling Prototype** – Top 10 k error resampling **Owner:** Team
 - [x] **RMSE Comparison (OOS CLI)** – Automate PINN vs FD & MC baselines **Owner:** Team
-- [ ] **Write Milestone Report** – Intro, Methods, Prelim Results, Next Steps **Owner:** Team
-- [ ] ✅ **Submit Milestone Report → Nov 3** **Owner:** Team
+- [x] **Write Milestone Report** – Completed; final draft submitted with milestone artefacts **Owner:** Team
+- [x] ✅ **Submit Milestone Report → Nov 3** **Owner:** Team
 
 ---
 
@@ -82,7 +82,7 @@ This project integrates the **Black-Scholes PDE** into a neural network’s loss
 
 ### Week 4 (Nov 4 – Nov 10): Refinement + Hyperparameter Tuning
 - [ ] Sweep λ ∈ {0.001, 0.01, 0.1} **Owner:** Team
-- [ ] Tune batch size and learning rate schedule **Owner:** Team
+- [ ] Tune batch size and learning rate schedule (initial batch-size diagnostics logged) **Owner:** Team
 - [ ] Validate training stability (3 seeds) **Owner:** Team
 - [ ] Profile runtime and GPU memory **Owner:** Team
 - [ ] ✅ Stable training configuration locked in **Owner:** Team
@@ -149,15 +149,17 @@ This project integrates the **Black-Scholes PDE** into a neural network’s loss
 
 | 🧩 To Do | ⚙️ In Progress | 📊 Done |
 |:--|:--|:--|
-| Milestone report draft | Expanded RMSE benchmarking | Repo setup |
-| Poster design | Hyperparameter sweep plan | Black-Scholes utilities |
-| Runtime benchmarking |  | Baselines & loss implementations |
-| Final report outline |  | Preprocessing & adaptive sampling |
-|  |  | Stress-test notebook |
-|  |  | Full run evaluation notebook |
+| Analytic supervision for θ/ν/ρ | Batch-size / LR diagnostics | Repo setup |
+| Wider residual trunk experiment | Hyperparameter sweep plan | Black-Scholes utilities |
+| Poster design | Milestone notebook maintenance | Baselines & loss implementations |
+| Runtime benchmarking |  | Preprocessing & adaptive sampling |
+| Final report outline |  | Stress-test notebook |
+|  |  | Milestone evaluation notebook + scorecard |
+|  |  | Full run evaluation notebook (legacy) |
 |  |  | OOS evaluation CLI & dashboards |
 |  |  | End-to-end evaluation notebook |
 |  |  | Training curves & logs |
+|  |  | Milestone report authored & submitted |
 
 ---
 

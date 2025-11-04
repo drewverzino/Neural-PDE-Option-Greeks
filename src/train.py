@@ -167,10 +167,25 @@ def _evaluate_set(
 
 
 def _configure_device(device: str | torch.device) -> torch.device:
+    if isinstance(device, str):
+        device_lower = device.lower()
+        if device_lower == "auto":
+            if torch.cuda.is_available():
+                return torch.device("cuda")
+            if getattr(torch.backends, "mps", None) is not None and torch.backends.mps.is_available():
+                return torch.device("mps")
+            return torch.device("cpu")
+        device = device_lower
+
     dev = torch.device(device)
     if dev.type == "cuda" and not torch.cuda.is_available():
         print("CUDA requested but not available. Falling back to CPU.")
         dev = torch.device("cpu")
+    elif dev.type == "mps":
+        mps_backend = getattr(torch.backends, "mps", None)
+        if mps_backend is None or not mps_backend.is_available():
+            print("MPS requested but not available. Falling back to CPU.")
+            dev = torch.device("cpu")
     return dev
 
 
@@ -182,7 +197,7 @@ def train(
     batch_size: int = 4096,
     data_path: Path | str = DATA_DIR / "synthetic_train.npy",
     val_path: Path | str | None = DATA_DIR / "synthetic_val.npy",
-    device: str | torch.device = "cpu",
+    device: str | torch.device = "auto",
     adaptive_sampling: bool = False,
     adaptive_every: int = 5,
     adaptive_points: int = 10_000,
@@ -206,6 +221,9 @@ def train(
     """Train the PINN on mini-batches of synthetic Black-Scholes data."""
     device = _configure_device(device)
     model = PINNModel().to(device)
+
+    if pin_memory is None:
+        pin_memory = device.type == "cuda"
 
     checkpoint_path = Path(checkpoint_path)
     if load_checkpoint and checkpoint_path.exists():
@@ -520,8 +538,8 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--device",
-        default="cpu",
-        help='Training device ("cpu" or "cuda").',
+        default="auto",
+        help='Training device ("cpu", "cuda", "mps", or "auto").',
     )
 
     parser.add_argument(

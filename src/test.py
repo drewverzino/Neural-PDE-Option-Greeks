@@ -23,6 +23,29 @@ from .preprocessing import (
 from .utils.black_scholes import bs_greeks
 
 
+def _resolve_device(device: str | torch.device) -> torch.device:
+    if isinstance(device, str):
+        device_lower = device.lower()
+        if device_lower == "auto":
+            if torch.cuda.is_available():
+                return torch.device("cuda")
+            if getattr(torch.backends, "mps", None) is not None and torch.backends.mps.is_available():
+                return torch.device("mps")
+            return torch.device("cpu")
+        device = device_lower
+
+    dev = torch.device(device)
+    if dev.type == "cuda" and not torch.cuda.is_available():
+        print("CUDA requested but not available. Falling back to CPU.")
+        dev = torch.device("cpu")
+    elif dev.type == "mps":
+        mps_backend = getattr(torch.backends, "mps", None)
+        if mps_backend is None or not mps_backend.is_available():
+            print("MPS requested but not available. Falling back to CPU.")
+            dev = torch.device("cpu")
+    return dev
+
+
 def mae(pred: np.ndarray, target: np.ndarray) -> float:
     return float(np.mean(np.abs(pred - target)))
 
@@ -35,7 +58,7 @@ def evaluate_oos(
     data_path: Path | str,
     model_path: Path | str,
     *,
-    device: str | torch.device = "cpu",
+    device: str | torch.device = "auto",
     sample_size: int | None = None,
     mc_paths: int = 50_000,
     seed: int = 0,
@@ -58,7 +81,7 @@ def evaluate_oos(
     config = load_normalization_config(Path(data_path).parent)
     K, T, r = config.K, config.T, config.r
 
-    device = torch.device(device)
+    device = _resolve_device(device)
     model = PINNModel().to(device)
     model.load_state_dict(torch.load(model_path, map_location=device))
     model.eval()
@@ -485,7 +508,9 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Trained PINN checkpoint.",
     )
     parser.add_argument(
-        "--device", default="cpu", help='Evaluation device ("cpu" or "cuda").'
+        "--device",
+        default="auto",
+        help='Evaluation device ("cpu", "cuda", "mps", or "auto").',
     )
     parser.add_argument(
         "--sample-size", type=int, default=None, help="Optional subsample size."
