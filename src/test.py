@@ -14,7 +14,7 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from . import DATA_DIR, RESULTS_DIR
 from .baselines import finite_diff_greeks, mc_pathwise_greeks
-from .models import PINNModel
+from .models import PINNModel, load_pinn_checkpoint
 from .preprocessing import (
     NormalizationConfig,
     load_normalization_config,
@@ -83,7 +83,7 @@ def evaluate_oos(
 
     device = _resolve_device(device)
     model = PINNModel().to(device)
-    model.load_state_dict(torch.load(model_path, map_location=device))
+    load_pinn_checkpoint(model, torch.load(model_path, map_location=device), strict=False)
     model.eval()
 
     S = torch.tensor(S_np, dtype=torch.float32, device=device)

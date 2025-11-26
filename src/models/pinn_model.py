@@ -1,5 +1,8 @@
 """Physics-informed neural network architectures for option pricing."""
 
+import os
+from typing import Any, Mapping
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -37,6 +40,33 @@ class PINNModel(nn.Module):
         for b in self.blocks:
             h = b(h)
         return self.output(h).squeeze(-1)
+
+
+def load_pinn_checkpoint(
+    model: nn.Module,
+    state_dict_or_path: str | Mapping[str, Any],
+    *,
+    map_location: str | torch.device | None = None,
+    strict: bool = False,
+) -> nn.Module:
+    """Load a checkpoint while mapping legacy layer names.
+
+    Older checkpoints used ``resblocks.*``. Newer models use ``blocks.*`` with
+    an added LayerNorm; we keep the old weights, allow missing norm params, and
+    avoid unexpected-key errors.
+    """
+    if isinstance(state_dict_or_path, (str, bytes, os.PathLike)):  # type: ignore[arg-type]
+        state = torch.load(state_dict_or_path, map_location=map_location)
+    else:
+        state = state_dict_or_path
+
+    remapped = {}
+    for k, v in state.items():
+        new_k = k.replace("resblocks.", "blocks.")
+        remapped[new_k] = v
+
+    model.load_state_dict(remapped, strict=strict)
+    return model
 
 
 # class ResidualBlock(nn.Module):

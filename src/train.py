@@ -15,7 +15,7 @@ from torch.utils.data import DataLoader, TensorDataset
 import plotly.graph_objects as go
 from . import DATA_DIR, FIGURES_DIR, RESULTS_DIR
 from .losses import compute_pde_residual, pinn_loss
-from .models import PINNModel
+from .models import PINNModel, load_pinn_checkpoint
 from .preprocessing import NormalizationConfig, load_normalization_config
 from .utils import bs_price
 
@@ -227,7 +227,9 @@ def train(
 
     checkpoint_path = Path(checkpoint_path)
     if load_checkpoint and checkpoint_path.exists():
-        model.load_state_dict(torch.load(checkpoint_path, map_location=device))
+        load_pinn_checkpoint(
+            model, torch.load(checkpoint_path, map_location=device), strict=False
+        )
         print(f"Loaded checkpoint from {checkpoint_path}")
         return model, []
 

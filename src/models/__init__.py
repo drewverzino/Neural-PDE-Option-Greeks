@@ -1,9 +1,5 @@
 """Neural network models used for PDE-based option pricing."""
 
-# from .pinn_model import PINNModel, ResidualBlock
+from .pinn_model import PINNModel, TanhBlock, load_pinn_checkpoint
 
-# __all__ = ["PINNModel", "ResidualBlock"]
-
-from .pinn_model import PINNModel, TanhBlock
-
-__all__ = ["PINNModel", "TanhBlock"]
+__all__ = ["PINNModel", "TanhBlock", "load_pinn_checkpoint"]

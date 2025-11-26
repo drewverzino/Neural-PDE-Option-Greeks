@@ -9,7 +9,7 @@ import plotly.graph_objects as go
 import torch
 
 from . import FIGURES_DIR, RESULTS_DIR
-from .models import PINNModel
+from .models import PINNModel, load_pinn_checkpoint
 from .preprocessing import normalize_inputs
 
 
@@ -36,7 +36,7 @@ def evaluate(
     """Load a saved checkpoint and render the implied price surface."""
     device = _configure_device(device)
     model = PINNModel().to(device)
-    model.load_state_dict(torch.load(model_path, map_location=device))
+    load_pinn_checkpoint(model, torch.load(model_path, map_location=device), strict=False)
 
     S = torch.linspace(s_min, s_max, grid_points, device=device)
     sigma = torch.linspace(sigma_min, sigma_max, grid_points, device=device)
