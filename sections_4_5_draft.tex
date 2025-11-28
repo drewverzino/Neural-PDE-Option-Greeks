@@ -120,15 +120,15 @@ Figure~\ref{fig:price_surface} shows the learned price surface $V_\theta(S,\sigm
 
 \begin{figure}[h]
 \centering
-\includegraphics[width=0.48\linewidth]{figures/full_report_run/oos/pinn_delta_surface.html}
-\includegraphics[width=0.48\linewidth]{figures/full_report_run/oos/pinn_gamma_surface.html}
+\includegraphics[width=0.48\linewidth]{figures/end_to_end/oos/pinn_delta_surface.png}
+\includegraphics[width=0.48\linewidth]{figures/end_to_end/oos/pinn_gamma_surface.png}
 \caption{Delta (left) and Gamma (right) surfaces computed via automatic differentiation. Surfaces exhibit smoothness and match analytic solutions across most of the domain.}
 \label{fig:greeks}
 \end{figure}
 
 \begin{figure}[h]
 \centering
-\fbox{\parbox{0.7\linewidth}{\centering \textbf{[PDE Residual Heatmap]} \\ Placeholder: Interactive HTML visualization available at \texttt{figures/final/pde\_residual\_heatmap.html}}}
+\includegraphics[width=0.7\linewidth]{figures/residual_heatmaps/pde_residual_coarse.png}
 \caption{PDE residual $|\mathcal{R}[V_\theta]|$ across $(S,\sigma)$ space at $t=1.0$. Higher residuals concentrate near the strike price $K=100$ where curvature is greatest.}
 \label{fig:residual}
 \end{figure}
